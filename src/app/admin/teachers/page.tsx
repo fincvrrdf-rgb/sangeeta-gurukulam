@@ -60,6 +60,13 @@ export default function TeachersPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
+  // Add teacher form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
   const load = useCallback(() => {
     if (!user) return;
     setLoading(true);
@@ -150,6 +157,62 @@ export default function TeachersPage() {
         <p className="text-sm text-gray-500 mt-1">
           Manage teacher profiles, batch assignments, and account status.
         </p>
+      </div>
+
+      {/* Add Teacher button + form */}
+      <div>
+        {!showAddForm ? (
+          <button onClick={() => setShowAddForm(true)} className="btn-primary">
+            + Add Teacher
+          </button>
+        ) : (
+          <div className="card space-y-4">
+            <h3 className="section-title text-sm">Add New Teacher</h3>
+            <p className="text-xs text-gray-500">
+              Enter the teacher&apos;s email. If they already have an account, their role will be upgraded. Otherwise, a new account is created.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Full Name</label>
+                <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Teacher's full name" className="input" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="teacher@email.com" className="input" />
+              </div>
+            </div>
+            {addError && <p className="text-sm text-red-600">{addError}</p>}
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  if (!newEmail || !newName) { setAddError('Name and email are required.'); return; }
+                  setAdding(true); setAddError(null);
+                  try {
+                    const res = await apiFetch('/api/admin/teachers', {
+                      method: 'POST',
+                      body: JSON.stringify({ email: newEmail, displayName: newName }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok) { setAddError(json.error || 'Failed to add teacher.'); return; }
+                    setSaveSuccess(`${newName} added as teacher.`);
+                    setShowAddForm(false); setNewEmail(''); setNewName('');
+                    load();
+                  } catch { setAddError('Network error.'); }
+                  finally { setAdding(false); }
+                }}
+                disabled={adding}
+                className="btn-primary"
+              >
+                {adding ? 'Adding…' : 'Add Teacher'}
+              </button>
+              <button onClick={() => { setShowAddForm(false); setAddError(null); }} className="btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {saveSuccess && (
