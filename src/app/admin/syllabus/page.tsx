@@ -176,9 +176,20 @@ export default function SyllabusPage() {
           <p className="text-sm text-gray-500 mt-1">
             Ganamrutha Bodhini — lessons and teaching units
           </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Lessons sourced from{' '}
+            <a
+              href="https://www.amazon.in/dp/B0DFHZG1J6"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-saffron-600 hover:underline"
+            >
+              Ganamrutha Bodhini by A.S. Panchapakesa Iyer
+            </a>
+          </p>
         </div>
         <button onClick={startAdd} className="btn-primary flex-shrink-0">
-          + Add Geetham
+          + Add Lesson
         </button>
       </div>
 
@@ -196,12 +207,12 @@ export default function SyllabusPage() {
       {showAddForm && (
         <div className="card border-saffron-300 bg-saffron-50">
           <h3 className="section-title mb-4">
-            {editingUnit ? 'Edit Geetham' : 'New Geetham'}
+            {editingUnit ? 'Edit Lesson' : 'New Lesson'}
           </h3>
           <form onSubmit={submitForm} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Geetham Name <span className="text-red-500">*</span>
+                Lesson Name <span className="text-red-500">*</span>
               </label>
               <input
                 className="input"
@@ -259,7 +270,7 @@ export default function SyllabusPage() {
                 className="btn-primary"
                 disabled={saving}
               >
-                {saving ? 'Saving…' : editingUnit ? 'Save Changes' : 'Add Geetham'}
+                {saving ? 'Saving…' : editingUnit ? 'Save Changes' : 'Add Lesson'}
               </button>
               <button
                 type="button"
@@ -289,7 +300,14 @@ export default function SyllabusPage() {
               </p>
               <p className="text-xs text-saffron-700 mt-0.5">
                 by {data.books[0].authorName} &mdash;{' '}
-                <span className="capitalize">{data.books[0].licenseStatus?.replace(/_/g, ' ')}</span>
+                <a
+                  href="https://www.amazon.in/dp/B0DFHZG1J6"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:no-underline"
+                >
+                  Buy on Amazon
+                </a>
               </p>
             </div>
           ) : null}
@@ -351,7 +369,7 @@ export default function SyllabusPage() {
                 <>
                   {geethams.length === 0 ? (
                     <div className="px-10 py-4 text-sm text-gray-400 italic">
-                      No geethams added yet. Use &ldquo;Add Geetham&rdquo; above.
+                      No lessons added yet. Use &ldquo;Add Lesson&rdquo; above.
                     </div>
                   ) : (
                     geethams.map((unit) => (
@@ -394,7 +412,7 @@ export default function SyllabusPage() {
                       onClick={startAdd}
                       className="text-xs text-saffron-600 hover:underline"
                     >
-                      + Add another geetham
+                      + Add another lesson
                     </button>
                   </div>
                 </>

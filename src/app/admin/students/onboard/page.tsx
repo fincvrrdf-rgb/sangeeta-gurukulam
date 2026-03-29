@@ -56,6 +56,20 @@ export default function OnboardStudentPage() {
         <p className="text-sm text-gray-500 mt-1">
           Create a student account. They can sign in with Google or set a password via &quot;Forgot Password&quot;.
         </p>
+        <div className="mt-3 rounded-lg bg-saffron-50 border border-saffron-200 px-4 py-3">
+          <p className="text-xs text-saffron-800">
+            Our syllabus follows{' '}
+            <a
+              href="https://www.amazon.in/dp/B0DFHZG1J6"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-saffron-700 hover:underline"
+            >
+              Ganamrutha Bodhini by A.S. Panchapakesa Iyer
+            </a>
+            . Students are encouraged to purchase a copy for reference.
+          </p>
+        </div>
       </div>
 
       {success && (
