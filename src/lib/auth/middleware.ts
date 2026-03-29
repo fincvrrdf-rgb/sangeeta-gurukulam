@@ -81,5 +81,7 @@ export function authErrorResponse(error: unknown): Response {
   if (error instanceof AuthError) {
     return Response.json({ error: error.message }, { status: error.statusCode });
   }
-  return Response.json({ error: 'Internal server error' }, { status: 500 });
+  console.error('[API_ERROR]', error);
+  const message = error instanceof Error ? error.message : 'Internal server error';
+  return Response.json({ error: message }, { status: 500 });
 }
