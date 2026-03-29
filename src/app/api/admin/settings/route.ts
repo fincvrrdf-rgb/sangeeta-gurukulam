@@ -7,7 +7,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { getDoc, setDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 
@@ -15,10 +15,27 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['teacher', 'super_admin']);
 
-    const settings = await getDoc(COLLECTIONS.APP_SETTINGS, 'global');
+    let settings = await getDoc(COLLECTIONS.APP_SETTINGS, 'global');
 
     if (!settings) {
-      return Response.json({ error: 'App settings not found' }, { status: 404 });
+      // Create default settings on first access
+      const defaults = {
+        consecutiveViolationsThreshold: 4,
+        paymentDueDayOfMonth: 5,
+        paymentGracePeriodDays: 3,
+        absenceMarkDeadlineHours: 6,
+        longAbsenceMinDays: 14,
+        longAbsenceMaxDays: 90,
+        classReminderMinutesBefore: 60,
+        bhajanDefaultStartTime: '17:30',
+        bhajanDefaultDurationMinutes: 30,
+        riyazMinDurationMinutes: 15,
+        weeklyReportDayOfWeek: 5,
+        dataRetentionDays: 365,
+        createdAt: nowISO(),
+      };
+      await setDoc(COLLECTIONS.APP_SETTINGS, 'global', defaults);
+      settings = { id: 'global', ...defaults };
     }
 
     return Response.json({ success: true, settings });
