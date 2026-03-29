@@ -104,7 +104,11 @@ export default function ManageClassesPage() {
     if (!confirm('Cancel this class instance?')) return;
     setCancellingId(id);
     try {
-      const res = await apiFetch(`/api/classes/instances/${id}/cancel`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/classes/instances/${id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Cancelled by teacher' }),
+      });
       if (!res.ok) throw new Error('Cancel failed');
       setInstances((prev) =>
         prev.map((inst) => (inst.id === id ? { ...inst, status: 'cancelled' } : inst))

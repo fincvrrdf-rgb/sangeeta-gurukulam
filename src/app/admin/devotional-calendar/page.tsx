@@ -181,6 +181,10 @@ export default function DevotionalCalendarPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
+  // AI fetch state
+  const [fetchingAi, setFetchingAi] = useState(false);
+  const [aiRegion, setAiRegion] = useState<'india' | 'international'>('india');
+
   const load = useCallback(() => {
     if (!user) return;
     setLoading(true);
@@ -259,6 +263,36 @@ export default function DevotionalCalendarPage() {
     }
   }
 
+  async function fetchFromDrikPanchang() {
+    setFetchingAi(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    const month = monthKey(new Date(viewYear, viewMonth, 1));
+    try {
+      const res = await apiFetch('/api/admin/devotional-calendar/fetch-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, region: aiRegion }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setSaveError(json.error ?? 'Failed to fetch events from AI.');
+        return;
+      }
+      setSaveSuccess(
+        `Fetched ${json.created} new event${json.created !== 1 ? 's' : ''} from Drik Panchang` +
+        (json.skipped > 0 ? ` (${json.skipped} duplicates skipped)` : '') +
+        '.'
+      );
+      load();
+    } catch {
+      setSaveError('Network error fetching from Drik Panchang.');
+    } finally {
+      setFetchingAi(false);
+    }
+  }
+
   const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
@@ -285,6 +319,38 @@ export default function DevotionalCalendarPage() {
         >
           {showForm ? 'Cancel' : '+ Add Event'}
         </button>
+      </div>
+
+      {/* AI Fetch from Drik Panchang */}
+      <div className="card border-purple-200 bg-purple-50">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-purple-900">Auto-populate from Drik Panchang</p>
+            <p className="text-xs text-purple-700 mt-0.5">
+              Uses AI to fetch festivals, ekadashis, vrats, and pujas for the selected month and region.
+            </p>
+            <p className="text-[10px] text-purple-500 mt-1">
+              Source: <a href="https://www.drikpanchang.com" target="_blank" rel="noopener noreferrer" className="underline">drikpanchang.com</a>
+            </p>
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <select
+              className="input w-auto text-xs py-1.5"
+              value={aiRegion}
+              onChange={(e) => setAiRegion(e.target.value as 'india' | 'international')}
+            >
+              <option value="india">India</option>
+              <option value="international">International</option>
+            </select>
+            <button
+              onClick={fetchFromDrikPanchang}
+              disabled={fetchingAi}
+              className="btn bg-purple-600 text-white hover:bg-purple-700 focus:ring-purple-500 text-xs"
+            >
+              {fetchingAi ? 'Fetching…' : 'Fetch Events'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Success */}
@@ -431,33 +497,40 @@ export default function DevotionalCalendarPage() {
             </button>
           </div>
         ) : (
-          <div className="card p-0 overflow-hidden divide-y divide-gray-100">
-            {events.map((ev) => (
-              <div key={ev.id} className="px-5 py-4 flex items-start gap-4">
-                <div className="text-2xl flex-shrink-0">🪔</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-charcoal">
-                      {ev.title}
+          <>
+            <div className="card p-0 overflow-hidden divide-y divide-gray-100">
+              {events.map((ev) => (
+                <div key={ev.id} className="px-5 py-4 flex items-start gap-4">
+                  <div className="text-2xl flex-shrink-0">🪔</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-charcoal">
+                        {ev.title}
+                      </p>
+                      <span className={`badge ${eventTypeBadge(ev.eventType)}`}>
+                        {ev.eventType}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formatDate(ev.eventDate)}
                     </p>
-                    <span
-                      className={`badge ${eventTypeBadge(ev.eventType)}`}
-                    >
-                      {ev.eventType}
-                    </span>
+                    {ev.description && (
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        {ev.description}
+                      </p>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {formatDate(ev.eventDate)}
-                  </p>
-                  {ev.description && (
-                    <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                      {ev.description}
-                    </p>
-                  )}
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-2 text-center">
+              Event information referenced from{' '}
+              <a href="https://www.drikpanchang.com" target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
+                Drik Panchang
+              </a>
+              . Dates may vary by region.
+            </p>
+          </>
         )}
       </section>
     </div>

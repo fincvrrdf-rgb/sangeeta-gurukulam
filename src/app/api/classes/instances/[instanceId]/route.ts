@@ -1,0 +1,62 @@
+/**
+ * API: PATCH /api/classes/instances/[instanceId]
+ *
+ * Update a class instance — primarily for saving the Google Meet link.
+ */
+
+import { NextRequest } from 'next/server';
+import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
+import { getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { COLLECTIONS } from '@/domain/constants';
+import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
+import { z } from 'zod';
+
+const UpdateInstanceSchema = z.object({
+  meetLink: z.string().url().optional(),
+  status: z.enum(['scheduled', 'live', 'completed', 'cancelled']).optional(),
+  notes: z.string().optional(),
+});
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ instanceId: string }> }
+) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const { instanceId } = await params;
+    const body = await request.json();
+    const parsed = UpdateInstanceSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const existing = await getDoc(COLLECTIONS.CLASS_INSTANCES, instanceId);
+    if (!existing) {
+      return Response.json({ error: 'Class instance not found' }, { status: 404 });
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: nowISO() };
+    if (parsed.data.meetLink !== undefined) updates.meetLink = parsed.data.meetLink;
+    if (parsed.data.status !== undefined) updates.status = parsed.data.status;
+    if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+
+    await updateDoc(COLLECTIONS.CLASS_INSTANCES, instanceId, updates);
+
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    await writeAuditLog({
+      actorId: auth.uid,
+      actorRole: auth.role,
+      action: 'CLASS_INSTANCE_UPDATED',
+      entityType: 'class_instance',
+      entityId: instanceId,
+      newState: updates,
+      ipAddress,
+      userAgent,
+    });
+
+    return Response.json({ success: true, instanceId });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}

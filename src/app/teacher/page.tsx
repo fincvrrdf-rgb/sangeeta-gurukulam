@@ -139,16 +139,26 @@ export default function TeacherDashboard() {
   ];
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-      {/* Greeting */}
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-charcoal">
+    <div className="max-w-3xl mx-auto space-y-0">
+      {/* Peacock header */}
+      <div
+        className="px-5 py-7 text-white"
+        style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d3b2e 50%, #1a4a3a 100%)' }}
+      >
+        <h1 className="font-heading text-2xl font-bold">
           Namaste, {firstName} 🙏
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Here is your teaching overview for today.
+        <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          Sangeeta Gurukulam — Teacher Portal
         </p>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="h-0.5 flex-1 rounded" style={{ background: 'rgba(34,197,94,0.4)' }} />
+          <span className="text-xs" style={{ color: '#22c55e' }}>सङ्गीत गुरुकुलम्</span>
+          <div className="h-0.5 flex-1 rounded" style={{ background: 'rgba(34,197,94,0.4)' }} />
+        </div>
       </div>
+
+      <div className="px-4 py-8 space-y-8">
 
       {/* Stats */}
       <section>
@@ -247,6 +257,7 @@ export default function TeacherDashboard() {
           )}
         </div>
       </section>
+      </div>
     </div>
   );
 }

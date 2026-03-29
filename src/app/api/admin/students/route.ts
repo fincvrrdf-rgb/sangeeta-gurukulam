@@ -17,9 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['super_admin']);
 
-    const students = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, [
-      { type: 'orderBy', field: 'createdAt', direction: 'desc' },
-    ]);
+    const students = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
 
     // Build email map
     const emailMap: Record<string, string> = {};
@@ -42,6 +40,10 @@ const AddStudentSchema = z.object({
   phone: z.string().optional(),
   guardianName: z.string().optional(),
   billingRegion: z.enum(['india', 'international']).default('india'),
+  // Dependent: parent-child joining the same class with one email
+  isDependent: z.boolean().default(false),
+  dependentName: z.string().optional(),  // child's name if parent is primary
+  primaryStudentId: z.string().optional(), // if this IS the dependent, link to parent
 });
 
 export async function POST(request: NextRequest) {
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { email, displayName, phone, guardianName, billingRegion } = parsed.data;
+    const { email, displayName, phone, guardianName, billingRegion, isDependent, dependentName, primaryStudentId } = parsed.data;
 
     // Check if user exists in Firebase Auth, create if not
     let firebaseUser;
@@ -102,6 +104,10 @@ export async function POST(request: NextRequest) {
         isMinor: false,
         guardianConsentGiven: false,
         guardianConsentTimestamp: null,
+        // Dependent support: parent-child sharing attendance
+        isDependent: isDependent || false,
+        dependentName: dependentName || null,       // child's name linked to parent account
+        primaryStudentId: primaryStudentId || null, // if this is a dependent, link to primary
         primaryTeacherId: '',
         enrollmentDate: nowISO(),
         countryCode: billingRegion === 'india' ? 'IN' : '',

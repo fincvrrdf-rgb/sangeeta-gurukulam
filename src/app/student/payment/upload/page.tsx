@@ -39,6 +39,7 @@ export default function UploadPaymentPage() {
   const { user, apiFetch } = useAuthContext();
 
   const [cycleMonth, setCycleMonth] = useState(currentMonth());
+  const [paymentType, setPaymentType] = useState<'regular' | 'donation'>('regular');
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -113,6 +114,7 @@ export default function UploadPaymentPage() {
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,
+          paymentType,
         }),
       });
 
@@ -172,8 +174,46 @@ export default function UploadPaymentPage() {
         </div>
       )}
 
+      {/* Donation banner */}
+      <div className="rounded-xl border border-saffron-200 bg-saffron-50 px-4 py-3 text-sm text-saffron-800">
+        <p className="font-semibold mb-1">💛 Donate to support the Gurukulam</p>
+        <p className="text-xs">
+          Payment is optional unless you have missed classes. You are always welcome to donate any amount to support the academy&apos;s mission.
+          Select &quot;Donation&quot; below if you wish to contribute voluntarily.
+        </p>
+      </div>
+
       {/* Form */}
       <form onSubmit={handleSubmit} className="card space-y-5">
+        {/* Payment type */}
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1.5">Payment type</label>
+          <div className="flex gap-4">
+            {([
+              { value: 'regular', label: 'Regular / Compulsory' },
+              { value: 'donation', label: '💛 Voluntary Donation' },
+            ] as const).map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentType"
+                  value={value}
+                  checked={paymentType === value}
+                  onChange={() => setPaymentType(value)}
+                  className="accent-saffron-600"
+                  disabled={isSubmitting}
+                />
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
+          </div>
+          {paymentType === 'donation' && (
+            <p className="text-xs text-saffron-700 mt-1">
+              Thank you! Donations are acknowledged but do not clear compulsory payment obligations.
+            </p>
+          )}
+        </div>
+
         {/* Month selector */}
         <div>
           <label

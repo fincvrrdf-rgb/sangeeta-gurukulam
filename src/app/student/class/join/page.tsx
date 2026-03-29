@@ -1,6 +1,12 @@
 /**
  * Student — Join a live class.
- * Shows today's scheduled class instances with Meet links.
+ * Shows today's scheduled class instances filtered to the student's batch.
+ * Auto-marks attendance when Meet link is clicked.
+ *
+ * Schedule:
+ *   Mon/Wed — Batch A (morning 5:30–6:30) / Batch B (evening 4:30–5:30)
+ *   Tue/Fri — Batch C (morning 5:30–6:30) / Batch D (evening 4:30–5:30)
+ *   Saturday — Testing / Bhajan (all batches)
  */
 
 'use client';
@@ -10,46 +16,107 @@ import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface ClassInstance {
   id: string;
-  scheduledDate: string;
+  scheduledDate?: string;
   scheduledStartTime: string;
   scheduledEndTime: string;
   meetLink?: string;
+  googleMeetLink?: string;
   status: string;
   batchBandId: string;
 }
+
+const SCHEDULE_INFO: Record<string, string> = {
+  '1': 'Monday — Batch A (5:30 AM) · Batch B (4:30 PM)',
+  '2': 'Tuesday — Batch C (5:30 AM) · Batch D (4:30 PM)',
+  '3': 'Wednesday — Batch A (5:30 AM) · Batch B (4:30 PM)',
+  '5': 'Friday — Batch C (5:30 AM) · Batch D (4:30 PM)',
+  '6': 'Saturday — Testing / All Batches',
+};
 
 export default function JoinClassPage() {
   const { apiFetch } = useAuthContext();
   const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [attendanceMsg, setAttendanceMsg] = useState<string | null>(null);
 
   const todayISO = new Date().toISOString().slice(0, 10);
+  const todayDow = String(new Date().getDay());
+  const scheduleNote = SCHEDULE_INFO[todayDow];
 
   useEffect(() => {
     apiFetch(`/api/classes/instances?from=${todayISO}&to=${todayISO}`)
       .then((r) => r.json())
       .then((data) => setInstances(data.instances ?? []))
-      .catch(() => setError('Could not load today\'s classes'))
+      .catch(() => setError("Could not load today's classes"))
       .finally(() => setLoading(false));
   }, [apiFetch, todayISO]);
 
   const now = new Date();
 
   function getStatus(instance: ClassInstance) {
-    const [h, m] = instance.scheduledStartTime.split(':').map(Number);
+    const timeStr = instance.scheduledStartTime;
+    // Handle ISO timestamps and plain HH:MM
+    let h: number, m: number;
+    if (timeStr.includes('T')) {
+      const d = new Date(timeStr);
+      h = d.getHours(); m = d.getMinutes();
+    } else {
+      [h, m] = timeStr.split(':').map(Number);
+    }
     const classTime = new Date();
     classTime.setHours(h, m, 0, 0);
-    const diff = (classTime.getTime() - now.getTime()) / 60000; // minutes
+    const diff = (classTime.getTime() - now.getTime()) / 60000;
     if (diff > 15) return 'upcoming';
     if (diff > -60) return 'joinable';
     return 'ended';
   }
 
+  function formatTime(timeStr: string): string {
+    if (timeStr.includes('T')) {
+      return new Date(timeStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    return timeStr;
+  }
+
+  async function handleJoin(instance: ClassInstance, link: string) {
+    // Auto-mark attendance silently
+    try {
+      const res = await apiFetch('/api/attendance/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classInstanceId: instance.id }),
+      });
+      const json = await res.json();
+      if (json.message) {
+        setAttendanceMsg(json.message);
+        setTimeout(() => setAttendanceMsg(null), 5000);
+      }
+    } catch {
+      // Non-blocking — open meet link regardless
+    }
+    window.open(link, '_blank', 'noopener,noreferrer');
+  }
+
   return (
-    <div>
-      <h1 className="section-title">Join Class</h1>
-      <p className="text-sm text-gray-500 mb-6">Today&apos;s scheduled classes</p>
+    <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
+      <div>
+        <h1 className="section-title">Join Class</h1>
+        {scheduleNote && (
+          <p className="text-xs text-gray-500 mt-0.5">
+            Today: {scheduleNote}
+          </p>
+        )}
+        <p className="text-xs text-gray-400 mt-0.5">
+          Only classes for your batch are shown. Joining within 15 min late = present; after = absent.
+        </p>
+      </div>
+
+      {attendanceMsg && (
+        <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-2 text-sm text-green-800">
+          ✅ {attendanceMsg}
+        </div>
+      )}
 
       {loading && (
         <div className="space-y-3">
@@ -71,9 +138,11 @@ export default function JoinClassPage() {
       {!loading && !error && instances.length === 0 && (
         <div className="card text-center py-10">
           <div className="text-4xl mb-3">📅</div>
-          <p className="text-gray-600 font-medium">No classes scheduled for today</p>
+          <p className="text-gray-600 font-medium">No classes scheduled for your batch today</p>
           <p className="text-gray-400 text-sm mt-1">
-            Regular classes run Mon–Wed and Fri. Check with your teacher for updates.
+            {scheduleNote
+              ? `Today is ${scheduleNote}. Check with your teacher if you expected a class.`
+              : 'No classes today. Regular schedule: Mon/Wed (Batch A&B) · Tue/Fri (Batch C&D).'}
           </p>
         </div>
       )}
@@ -81,12 +150,13 @@ export default function JoinClassPage() {
       <div className="space-y-4">
         {instances.map((instance) => {
           const classStatus = getStatus(instance);
+          const link = instance.meetLink || instance.googleMeetLink;
           return (
             <div key={instance.id} className="card">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="font-medium text-charcoal">
-                    {instance.scheduledStartTime} – {instance.scheduledEndTime} IST
+                    {formatTime(instance.scheduledStartTime)} – {formatTime(instance.scheduledEndTime)} IST
                   </p>
                   <p className="text-sm text-gray-500 mt-0.5">Batch {instance.batchBandId}</p>
                 </div>
@@ -100,18 +170,17 @@ export default function JoinClassPage() {
               </div>
 
               <div className="mt-4">
-                {instance.meetLink ? (
-                  <a
-                    href={instance.meetLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`btn-primary w-full text-center block ${
-                      classStatus === 'ended' ? 'opacity-50 pointer-events-none' : ''
+                {link ? (
+                  <button
+                    onClick={() => handleJoin(instance, link)}
+                    disabled={classStatus === 'ended'}
+                    className={`btn-primary w-full text-center ${
+                      classStatus === 'ended' ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
                     {classStatus === 'joinable' ? 'Join Google Meet' :
-                     classStatus === 'upcoming' ? 'Meet Link Ready' : 'Class Ended'}
-                  </a>
+                     classStatus === 'upcoming' ? 'Meet Link Ready (opens when class starts)' : 'Class Ended'}
+                  </button>
                 ) : (
                   <div className="btn-secondary w-full text-center opacity-60 cursor-not-allowed">
                     Meet link not yet available

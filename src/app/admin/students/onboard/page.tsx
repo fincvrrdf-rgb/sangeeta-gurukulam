@@ -13,6 +13,8 @@ export default function OnboardStudentPage() {
   const [phone, setPhone] = useState('');
   const [guardianName, setGuardianName] = useState('');
   const [billingRegion, setBillingRegion] = useState<'india' | 'international'>('india');
+  const [isDependent, setIsDependent] = useState(false);
+  const [dependentName, setDependentName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -28,7 +30,10 @@ export default function OnboardStudentPage() {
     try {
       const res = await apiFetch('/api/admin/students', {
         method: 'POST',
-        body: JSON.stringify({ email, displayName: name, phone, guardianName, billingRegion }),
+        body: JSON.stringify({
+          email, displayName: name, phone, guardianName, billingRegion,
+          isDependent, dependentName: isDependent ? dependentName : undefined,
+        }),
       });
       const json = await res.json();
 
@@ -84,6 +89,39 @@ export default function OnboardStudentPage() {
         </div>
       )}
 
+      {/* Class Guidelines — Dos and Don'ts */}
+      <div className="card bg-gray-50 border-gray-200">
+        <h2 className="font-heading text-sm font-semibold text-charcoal mb-3">Class Guidelines (shared with student on onboarding)</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs font-semibold text-green-700 mb-1.5">Do&apos;s</p>
+            <ul className="text-xs text-gray-700 space-y-1 list-disc list-inside">
+              <li>Use headphones during class for better audio quality</li>
+              <li>Join class on time (before scheduled start)</li>
+              <li>Keep your mic muted until asked to sing</li>
+              <li>Practice daily (minimum 15 minutes riyaz)</li>
+              <li>Notify absence at least 6 hours before class</li>
+              <li>Upload payment proof by the 5th of each month</li>
+              <li>Keep the Ganamrutha Bodhini book handy during class</li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-red-700 mb-1.5">Don&apos;ts</p>
+            <ul className="text-xs text-gray-700 space-y-1 list-disc list-inside">
+              <li>Joining more than 15 minutes late counts as absent</li>
+              <li>Do not skip classes without prior notification</li>
+              <li>4 consecutive violations trigger compulsory payment</li>
+              <li>Do not share Google Meet links with non-students</li>
+              <li>Do not record or share class recordings without permission</li>
+              <li>Do not use speakers — headphones are mandatory</li>
+            </ul>
+          </div>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-3">
+          Attendance is tracked automatically via Google Meet. No manual attendance needed.
+        </p>
+      </div>
+
       <form onSubmit={handleSubmit} className="card space-y-4">
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1">Full Name *</label>
@@ -107,6 +145,40 @@ export default function OnboardStudentPage() {
           <label className="block text-xs font-semibold text-gray-700 mb-1">Guardian Name</label>
           <input type="text" value={guardianName} onChange={e => setGuardianName(e.target.value)}
             placeholder="Parent/guardian name (if minor)" className="input" />
+        </div>
+
+        {/* Dependent / Parent-Child */}
+        <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="isDependent"
+              checked={isDependent}
+              onChange={(e) => setIsDependent(e.target.checked)}
+              className="accent-saffron-600 w-4 h-4"
+            />
+            <label htmlFor="isDependent" className="text-sm font-medium text-charcoal cursor-pointer">
+              Parent &amp; child are joining together (shared account)
+            </label>
+          </div>
+          {isDependent && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Child&apos;s Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={dependentName}
+                onChange={(e) => setDependentName(e.target.value)}
+                placeholder="Child's full name"
+                className="input"
+                required={isDependent}
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                When the parent joins a class, attendance is automatically recorded for the child too.
+              </p>
+            </div>
+          )}
         </div>
 
         <div>

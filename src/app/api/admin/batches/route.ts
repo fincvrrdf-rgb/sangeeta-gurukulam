@@ -23,7 +23,7 @@ const UpdateBatchBandSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request, ['super_admin']);
+    await requireAuth(request, ['teacher', 'super_admin']);
 
     const batches = await queryDocs(COLLECTIONS.BATCH_BANDS, []);
 
