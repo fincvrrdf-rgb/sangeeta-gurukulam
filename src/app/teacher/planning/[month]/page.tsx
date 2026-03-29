@@ -2,7 +2,7 @@
  * Monthly Lesson Plan Detail — /teacher/planning/[month]
  *
  * Shows plan items grouped by week.
- * Allows adding new items inline.
+ * Allows adding new items inline with syllabus unit picker.
  */
 
 'use client';
@@ -31,6 +31,20 @@ interface AddItemForm {
   teachingUnit: string;
   objectives: string;
   activities: string;
+}
+
+interface SyllabusUnit {
+  id: string;
+  unitName: string;
+  ragam?: string | null;
+  taalam?: string | null;
+  lessonId: string;
+}
+
+interface SyllabusLesson {
+  id: string;
+  lessonNumber: number;
+  lessonName: string;
 }
 
 const EMPTY_FORM: AddItemForm = {
@@ -73,11 +87,23 @@ export default function MonthlyPlanPage() {
   const [addForm, setAddForm] = useState<AddItemForm>(EMPTY_FORM);
   const [addingItem, setAddingItem] = useState(false);
 
+  // Syllabus units for the picker
+  const [syllabusLessons, setSyllabusLessons] = useState<SyllabusLesson[]>([]);
+  const [syllabusUnits, setSyllabusUnits] = useState<SyllabusUnit[]>([]);
+
   useEffect(() => {
     if (!user) return;
-    apiFetch(`/api/planning/${month}`)
-      .then((r) => r.json())
-      .then((data: MonthlyPlan) => setPlan(data))
+    Promise.all([
+      apiFetch(`/api/planning/${month}`).then((r) => r.json()),
+      apiFetch('/api/admin/syllabus').then((r) => r.json()),
+    ])
+      .then(([planData, syllabusData]) => {
+        setPlan(planData);
+        if (syllabusData.success) {
+          setSyllabusLessons(syllabusData.lessons ?? []);
+          setSyllabusUnits(syllabusData.units ?? []);
+        }
+      })
       .catch((err) => setError(err.message ?? 'Failed to load plan.'))
       .finally(() => setLoading(false));
   }, [user, apiFetch, month]);
@@ -212,14 +238,51 @@ export default function MonthlyPlanPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-700">Teaching Unit *</label>
-              <input
-                type="text"
-                value={addForm.teachingUnit}
-                onChange={setField('teachingUnit')}
-                placeholder="e.g. Bhajan — Raghupati Raghav"
-                className="input"
-                required
-              />
+              {syllabusUnits.length > 0 ? (
+                <select
+                  value={addForm.teachingUnit}
+                  onChange={setField('teachingUnit')}
+                  className="input"
+                  required
+                >
+                  <option value="">— Pick from syllabus —</option>
+                  {syllabusLessons
+                    .sort((a, b) => a.lessonNumber - b.lessonNumber)
+                    .map((lesson) => {
+                      const units = syllabusUnits.filter((u) => u.lessonId === lesson.id);
+                      if (units.length === 0) return null;
+                      return (
+                        <optgroup key={lesson.id} label={`Lesson ${lesson.lessonNumber} — ${lesson.lessonName}`}>
+                          {units.sort((a, b) => (a.unitName > b.unitName ? 1 : -1)).map((u) => (
+                            <option key={u.id} value={u.unitName}>
+                              {u.unitName}{u.ragam ? ` (${u.ragam})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  <optgroup label="Other">
+                    <option value="__custom__">Custom (type below)</option>
+                  </optgroup>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={addForm.teachingUnit}
+                  onChange={setField('teachingUnit')}
+                  placeholder="e.g. Geetham 1 — Sree Ganapathini"
+                  className="input"
+                  required
+                />
+              )}
+              {addForm.teachingUnit === '__custom__' && (
+                <input
+                  type="text"
+                  placeholder="Enter custom unit name"
+                  className="input mt-1"
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, teachingUnit: e.target.value }))}
+                />
+              )}
             </div>
           </div>
 

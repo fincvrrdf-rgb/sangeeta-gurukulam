@@ -17,7 +17,10 @@ import { getFirestore } from 'firebase-admin/firestore';
 import {
   DEFAULT_APP_SETTINGS,
   GANAMRUTHA_BODHINI_LESSONS,
+  GANAMRUTHA_BODHINI_COPYRIGHT,
   INITIAL_GEETHAMS,
+  INITIAL_SWARAJATHIS,
+  INITIAL_VARNAMS,
   BATCH_BAND_DEFINITIONS,
   DEFAULT_RUBRIC_DIMENSIONS,
   COLLECTIONS,
@@ -60,14 +63,15 @@ async function seed() {
 
   if (existingBooks.empty) {
     const bookDoc = await booksRef.add({
-      title: 'Ganamrutha Bodhini',
-      authorName: 'A.S. Panchapakesa Iyer',
-      publisherName: 'Ganamrutha Prachuram, Chennai',
-      edition: 'August 2015',
-      teacherSummary: 'Foundation syllabus (Sangeetha Bala Padam) for Carnatic vocal music — covers swaravali varisaigal, jantai varisaigal, dhattu varisaigal, upper sthayi, 13 geethams, swarajathis, alankaras, and notes in various ragams.',
+      title: GANAMRUTHA_BODHINI_COPYRIGHT.title,
+      authorName: GANAMRUTHA_BODHINI_COPYRIGHT.author,
+      publisherName: GANAMRUTHA_BODHINI_COPYRIGHT.publisher,
+      edition: GANAMRUTHA_BODHINI_COPYRIGHT.edition,
+      amazonUrl: GANAMRUTHA_BODHINI_COPYRIGHT.amazonUrl,
+      teacherSummary: 'Foundation syllabus (Sangeetha Bala Padam) for Carnatic vocal music — Swaravali Varisaigal, Jantai Varisaigal, Dhattu Varisaigal, Alankarams, 13 Geethams, 2 Swarajathis, 5 Varnams.',
       isActive: true,
       licenseStatus: 'teacher_authored_only',
-      copyrightNotes: 'App stores teacher-authored metadata only. No reproduction of book pages.',
+      copyrightNotice: GANAMRUTHA_BODHINI_COPYRIGHT.notice,
       createdAt: now,
       updatedBy: 'seed_script',
       updatedAt: now,
@@ -165,7 +169,7 @@ async function seed() {
           ragam: geetham.ragam ?? null,
           taalam: geetham.taalam ?? null,
           composer: null,
-          estimatedClassCount: 5,
+          estimatedClassCount: geetham.estimatedClassCount ?? 5,
           lyricsId: null,
           order: geetham.unitNumber,
           isActive: true,
@@ -174,6 +178,72 @@ async function seed() {
           updatedAt: now,
         });
         console.log(`  [+] Unit: ${geetham.unitName} — ${geetham.ragam} (inside Lesson 5)`);
+      }
+    }
+  }
+
+  // Swarajathis inside Lesson 6
+  const lesson6Id = lessonIds[6];
+  if (lesson6Id) {
+    for (const sw of INITIAL_SWARAJATHIS) {
+      const existing = await unitsRef
+        .where('lessonId', '==', lesson6Id)
+        .where('unitNumber', '==', sw.unitNumber)
+        .get();
+
+      if (existing.empty) {
+        await unitsRef.add({
+          lessonId: lesson6Id,
+          bookId,
+          unitType: 'swarajathi',
+          unitName: sw.unitName,
+          unitNumber: sw.unitNumber,
+          description: '',
+          ragam: sw.ragam ?? null,
+          taalam: sw.taalam ?? null,
+          composer: null,
+          estimatedClassCount: sw.estimatedClassCount,
+          lyricsId: null,
+          order: sw.unitNumber,
+          isActive: true,
+          createdBy: 'seed_script',
+          createdAt: now,
+          updatedAt: now,
+        });
+        console.log(`  [+] Unit: ${sw.unitName} — ${sw.ragam} (inside Lesson 6)`);
+      }
+    }
+  }
+
+  // Varnams inside Lesson 7
+  const lesson7Id = lessonIds[7];
+  if (lesson7Id) {
+    for (const v of INITIAL_VARNAMS) {
+      const existing = await unitsRef
+        .where('lessonId', '==', lesson7Id)
+        .where('unitNumber', '==', v.unitNumber)
+        .get();
+
+      if (existing.empty) {
+        await unitsRef.add({
+          lessonId: lesson7Id,
+          bookId,
+          unitType: 'varnam',
+          unitName: v.unitName,
+          unitNumber: v.unitNumber,
+          description: '',
+          ragam: v.ragam ?? null,
+          taalam: v.taalam ?? null,
+          composer: null,
+          estimatedClassCount: v.estimatedClassCount,
+          lyricsId: null,
+          order: v.unitNumber,
+          isActive: true,
+          createdBy: 'seed_script',
+          createdAt: now,
+          updatedAt: now,
+        });
+        console.log(`  [+] Unit: ${v.unitName} — ${v.ragam} (inside Lesson 7)`);
       }
     }
   }

@@ -42,8 +42,9 @@ const AddStudentSchema = z.object({
   billingRegion: z.enum(['india', 'international']).default('india'),
   // Dependent: parent-child joining the same class with one email
   isDependent: z.boolean().default(false),
-  dependentName: z.string().optional(),  // child's name if parent is primary
-  primaryStudentId: z.string().optional(), // if this IS the dependent, link to parent
+  dependentName: z.string().optional(),
+  primaryStudentId: z.string().optional(),
+  batchBandId: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { email, displayName, phone, guardianName, billingRegion, isDependent, dependentName, primaryStudentId } = parsed.data;
+    const { email, displayName, phone, guardianName, billingRegion, isDependent, dependentName, primaryStudentId, batchBandId } = parsed.data;
 
     // Check if user exists in Firebase Auth, create if not
     let firebaseUser;
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
         currentLessonId: '',
         currentTeachingUnitId: '',
         currentMasteryStage: 'introduced',
-        currentBatchBandId: '',
+        currentBatchBandId: batchBandId || '',
         consecutiveViolationCount: 0,
         isPaymentCompulsoryThisCycle: false,
         paymentCompulsoryTriggeredAt: null,

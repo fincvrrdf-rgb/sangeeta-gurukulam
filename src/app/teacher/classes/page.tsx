@@ -90,6 +90,8 @@ export default function ManageClassesPage() {
   const [meetLinkId, setMeetLinkId] = useState<string | null>(null);
   const [meetLinkInput, setMeetLinkInput] = useState('');
   const [savingMeet, setSavingMeet] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -144,21 +146,55 @@ export default function ManageClassesPage() {
     }
   }
 
+  async function handleGenerateInstances() {
+    setGenerating(true);
+    setGenMsg(null);
+    try {
+      const res = await apiFetch('/api/classes/instances/auto-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daysAhead: 14 }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Failed');
+      setGenMsg(`✅ ${json.created} class instance${json.created !== 1 ? 's' : ''} generated for the next 14 days.`);
+      // Reload
+      const r2 = await apiFetch('/api/classes/instances?from=today&to=nextWeek');
+      const d2 = await r2.json();
+      setInstances(Array.isArray(d2) ? d2 : d2.instances ?? []);
+    } catch (e: unknown) {
+      setGenMsg('⚠️ ' + (e instanceof Error ? e.message : 'Could not generate instances.'));
+    } finally {
+      setGenerating(false);
+      setTimeout(() => setGenMsg(null), 5000);
+    }
+  }
+
   const grouped = groupByDay(instances);
   const sortedDays = Array.from(grouped.keys()).sort();
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
           <p className="text-sm text-gray-500 mt-0.5">Today and upcoming week</p>
         </div>
-        <Link href="/teacher/classes/new" className="btn-primary">
-          + New Slot
-        </Link>
+        <div className="flex gap-2">
+          <button onClick={handleGenerateInstances} disabled={generating} className="btn-secondary text-sm">
+            {generating ? 'Generating…' : '⚡ Auto-Schedule'}
+          </button>
+          <Link href="/teacher/classes/new" className="btn-primary">
+            + New Slot
+          </Link>
+        </div>
       </div>
+      {genMsg && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+          {genMsg}
+        </div>
+      )}
 
       {/* Error */}
       {error && (

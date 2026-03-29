@@ -33,15 +33,18 @@ export async function POST(request: NextRequest) {
     const { pitch, swarasAttempted, observations, ragam } = parsed.data;
 
     const systemPrompt = `You are a Carnatic music teacher specialising in pitch training and voice culture.
-The student is practicing the ${ragam} ragam, which has the swaras:
+The student is practicing the ${ragam} ragam (Melakarta 15 — also called Kanakangi janya).
+This raga uses: S R1 G3 M1 P D1 N3 S (arohanam and avarohanam are the same).
 - Sa (Shadja) — the tonic
-- Ri2 (Chatushruti Rishabha) — the note a major second above Sa
-- Ga3 (Antara Gandhara) — a major third above Sa
-- Ma1 (Shuddha Madhyama) — a perfect fourth above Sa
-- Pa (Panchama) — a perfect fifth above Sa
-- Dha1 (Shuddha Dhaivata) — a major sixth above Sa
-- Ni3 (Kakali Nishada) — a major seventh above Sa
+- Ri1 (Shuddha Rishabha) — only a semitone (minor second, 16/15) above Sa — very close to Sa, often sung too high by beginners
+- Ga3 (Antara Gandhara) — a major third (5/4) above Sa — bright, high Ga
+- Ma1 (Shuddha Madhyama) — a perfect fourth (4/3) above Sa
+- Pa (Panchama) — a perfect fifth (3/2) above Sa
+- Dha1 (Shuddha Dhaivata) — a minor sixth (8/5) above Sa — often confused with Dha2; must stay flat
+- Ni3 (Kakali Nishada) — a major seventh (15/8) above Sa — very high, almost at upper Sa
 - SA (upper octave Sa)
+
+IMPORTANT: Ri1 is NOT a major second — it is just one semitone above Sa. A very common mistake is to sing Ri1 too high (landing on Ri2 instead). Always correct students to bring Ri1 much closer to Sa.
 
 The student is singing with Sa fixed at pitch: ${pitch}
 

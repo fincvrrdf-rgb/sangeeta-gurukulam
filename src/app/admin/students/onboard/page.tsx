@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+
+interface BatchBand { id: string; code: string; name: string; }
 
 export default function OnboardStudentPage() {
   const router = useRouter();
@@ -15,9 +17,15 @@ export default function OnboardStudentPage() {
   const [billingRegion, setBillingRegion] = useState<'india' | 'international'>('india');
   const [isDependent, setIsDependent] = useState(false);
   const [dependentName, setDependentName] = useState('');
+  const [batchBandId, setBatchBandId] = useState('');
+  const [batches, setBatches] = useState<BatchBand[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch('/api/admin/batches').then(r => r.json()).then(d => setBatches(d.batches ?? [])).catch(() => {});
+  }, [apiFetch]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +41,7 @@ export default function OnboardStudentPage() {
         body: JSON.stringify({
           email, displayName: name, phone, guardianName, billingRegion,
           isDependent, dependentName: isDependent ? dependentName : undefined,
+          batchBandId: batchBandId || undefined,
         }),
       });
       const json = await res.json();
@@ -179,6 +188,45 @@ export default function OnboardStudentPage() {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Batch Band Selection */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">Assign to Batch</label>
+          {batches.length === 0 ? (
+            <p className="text-xs text-orange-600">
+              No batches found. Go to{' '}
+              <a href="/admin/batches" className="underline">Admin → Batches</a>{' '}
+              and create the standard batches first.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setBatchBandId('')}
+                className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                  batchBandId === '' ? 'bg-saffron-600 text-white border-saffron-600' : 'bg-white border-gray-300 text-charcoal'
+                }`}
+              >
+                Unassigned
+              </button>
+              {batches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setBatchBandId(b.id)}
+                  className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                    batchBandId === b.id ? 'bg-saffron-600 text-white border-saffron-600' : 'bg-white border-gray-300 text-charcoal hover:border-saffron-400'
+                  }`}
+                >
+                  Batch {b.code}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-gray-400 mt-1">
+            Mon/Wed → Batch A (morning) / B (evening) · Tue/Fri → Batch C (morning) / D (evening)
+          </p>
         </div>
 
         <div>
