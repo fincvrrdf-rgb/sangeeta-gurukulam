@@ -1,7 +1,3 @@
-/**
- * Register page — beautiful split-panel design matching brand aesthetic.
- */
-
 'use client';
 
 import { useState } from 'react';
@@ -27,10 +23,7 @@ export default function RegisterPage() {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
       body: JSON.stringify({ targetUserId: uid, role: 'student', displayName: name, email: userEmail }),
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'Failed to assign role');
-    }
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to assign role');
   };
 
   const handleEmailRegister = async (e: React.FormEvent) => {
@@ -44,10 +37,8 @@ export default function RegisterPage() {
       await user.getIdToken(true);
       router.push('/student');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Registration failed';
-      if (message.includes('email-already-in-use')) setError('This email is already registered. Please sign in instead.');
-      else if (message.includes('weak-password')) setError('Password must be at least 6 characters.');
-      else setError(message);
+      const msg = err instanceof Error ? err.message : 'Registration failed';
+      setError(msg.includes('email-already-in-use') ? 'This email is already registered.' : msg.includes('weak-password') ? 'Password must be at least 6 characters.' : msg);
     } finally { setLoading(false); }
   };
 
@@ -61,96 +52,78 @@ export default function RegisterPage() {
       await user.getIdToken(true);
       router.push('/student');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google registration failed';
-      if (!message.includes('popup-closed')) setError(message);
+      const msg = err instanceof Error ? err.message : 'Google sign-up failed';
+      if (!msg.includes('popup-closed')) setError(msg);
     } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel — decorative brand side */}
-      <div
-        className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #b45309 40%, #d97706 70%, #92400e 100%)' }}
-      >
-        {/* Decorative circles */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-[-80px] left-[-80px] w-96 h-96 rounded-full border-4 border-white" />
-          <div className="absolute bottom-[-60px] right-[-60px] w-80 h-80 rounded-full border-4 border-white" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full border border-white" />
-        </div>
+    <div className="min-h-screen flex" style={{ background: '#1a0a00' }}>
+      {/* Left — brand panel */}
+      <div className="hidden lg:flex lg:w-5/12 flex-col items-center justify-center relative px-12"
+        style={{ background: 'linear-gradient(160deg, #1a0a00 0%, #3b1400 50%, #1a0a00 100%)' }}>
+        {/* Subtle gold ring decorations */}
+        <div className="absolute top-20 left-20 w-40 h-40 rounded-full opacity-10"
+          style={{ border: '1px solid #d97706' }} />
+        <div className="absolute bottom-24 right-12 w-28 h-28 rounded-full opacity-10"
+          style={{ border: '1px solid #d97706' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-[420px] rounded-full opacity-5"
+          style={{ border: '1px solid #d97706' }} />
 
-        {/* Mandala-style dots */}
-        <div className="absolute inset-0 opacity-5"
-          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '30px 30px' }}
-        />
+        <div className="relative z-10 text-center">
+          <Image src="/logo.png" alt="Sangeeta Gurukulam" width={240} height={240}
+            className="mx-auto drop-shadow-2xl" priority />
 
-        <div className="relative z-10 text-center px-12">
-          <Image
-            src="/logo.png"
-            alt="Sangeeta Gurukulam"
-            width={280}
-            height={280}
-            className="mx-auto drop-shadow-2xl"
-            priority
-          />
-          <h1 className="mt-8 text-3xl font-bold text-white tracking-wide">
+          <h1 className="mt-8 text-2xl font-light tracking-[0.15em] uppercase"
+            style={{ color: '#f5deb3', fontFamily: 'Georgia, serif' }}>
             Sangeeta Gurukulam
           </h1>
-          <p className="mt-3 text-amber-200 text-lg font-medium">సంగీత గురుకులం</p>
-          <div className="mt-6 flex items-center justify-center gap-3 text-amber-100 text-sm">
-            <span>Carnatic Classical</span>
-            <span className="text-amber-400">•</span>
-            <span>Devotional Bhajans</span>
-            <span className="text-amber-400">•</span>
-            <span>Daily Bhajan Time</span>
+          <p className="mt-2 text-base tracking-wide" style={{ color: '#d97706' }}>
+            సంగీత గురుకులం
+          </p>
+
+          <div className="mt-8 flex items-center justify-center gap-4 text-xs tracking-widest uppercase"
+            style={{ color: '#a16207' }}>
+            <span>Live Classes</span>
+            <span style={{ color: '#d97706' }}>✦</span>
+            <span>Daily Bhajans</span>
           </div>
 
-          <div className="mt-10 grid grid-cols-3 gap-6 text-center">
-            {[
-              { icon: '🎵', label: '13 Geethams' },
-              { icon: '🎙️', label: 'Live Classes' },
-              { icon: '📖', label: 'AI Lyrics' },
-            ].map(({ icon, label }) => (
-              <div key={label} className="bg-white/10 rounded-xl p-4 backdrop-blur-sm">
-                <div className="text-2xl mb-1">{icon}</div>
-                <div className="text-amber-100 text-xs font-medium">{label}</div>
-              </div>
-            ))}
-          </div>
+          <div className="mt-12 w-px h-16 mx-auto opacity-20" style={{ background: '#d97706' }} />
         </div>
       </div>
 
-      {/* Right panel — form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12"
-        style={{ background: 'linear-gradient(180deg, #fffbf0 0%, #fef3c7 100%)' }}
-      >
-        <div className="w-full max-w-md">
+      {/* Right — form panel */}
+      <div className="w-full lg:w-7/12 flex items-center justify-center px-8 py-16"
+        style={{ background: '#fdf6ec' }}>
+        <div className="w-full max-w-sm">
+
           {/* Mobile logo */}
-          <div className="lg:hidden text-center mb-8">
-            <Image src="/logo.png" alt="Sangeeta Gurukulam" width={100} height={100} className="mx-auto" />
-            <h1 className="mt-3 text-xl font-bold text-amber-900">Sangeeta Gurukulam</h1>
+          <div className="lg:hidden text-center mb-10">
+            <Image src="/logo.png" alt="Sangeeta Gurukulam" width={80} height={80} className="mx-auto" />
+            <p className="mt-3 text-xs tracking-widest uppercase" style={{ color: '#92400e' }}>Sangeeta Gurukulam</p>
           </div>
 
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-amber-900">Join Us</h2>
-            <p className="mt-2 text-amber-700 text-sm">Begin your Carnatic music journey today</p>
+          <div className="mb-8">
+            <h2 className="text-2xl font-light" style={{ color: '#1c0a00', fontFamily: 'Georgia, serif' }}>
+              Create an account
+            </h2>
+            <p className="mt-1 text-sm" style={{ color: '#92400e' }}>Begin your musical journey</p>
           </div>
 
           {error && (
-            <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-2">
-              <span className="text-red-500 mt-0.5">⚠</span>
-              <span>{error}</span>
+            <div className="mb-6 px-4 py-3 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+              {error}
             </div>
           )}
 
-          {/* Google button first — most prominent */}
-          <button
-            onClick={handleGoogleRegister}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border-2 border-amber-300 bg-white text-gray-700 font-semibold text-sm hover:bg-amber-50 hover:border-amber-400 transition-all duration-200 shadow-sm mb-6"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24">
+          {/* Google */}
+          <button onClick={handleGoogleRegister} disabled={loading}
+            className="w-full flex items-center justify-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 mb-5"
+            style={{ background: '#fff', border: '1.5px solid #e5d5b0', color: '#3c1a00' }}
+            onMouseOver={e => (e.currentTarget.style.borderColor = '#d97706')}
+            onMouseOut={e => (e.currentTarget.style.borderColor = '#e5d5b0')}>
+            <svg width="18" height="18" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -159,89 +132,51 @@ export default function RegisterPage() {
             Continue with Google
           </button>
 
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-amber-200" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-amber-50 px-4 text-xs text-amber-600 font-medium">or register with email</span>
-            </div>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-px" style={{ background: '#e5d5b0' }} />
+            <span className="text-xs tracking-widest uppercase" style={{ color: '#a16207' }}>or</span>
+            <div className="flex-1 h-px" style={{ background: '#e5d5b0' }} />
           </div>
 
           <form onSubmit={handleEmailRegister} className="space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-semibold text-amber-900 mb-1.5">
-                Full Name
-              </label>
-              <input
-                id="name" type="text" required
-                value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your full name"
-                className="w-full px-4 py-3 rounded-xl border-2 border-amber-200 bg-white text-gray-800 placeholder-gray-400 text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition-all"
-              />
-            </div>
+            {[
+              { id: 'name', label: 'Full Name', type: 'text', value: displayName, setter: setDisplayName, placeholder: 'Your full name' },
+              { id: 'email', label: 'Email', type: 'email', value: email, setter: setEmail, placeholder: 'your@email.com' },
+              { id: 'password', label: 'Password', type: 'password', value: password, setter: setPassword, placeholder: '6+ characters' },
+            ].map(({ id, label, type, value, setter, placeholder }) => (
+              <div key={id}>
+                <label htmlFor={id} className="block text-xs font-semibold tracking-widest uppercase mb-2"
+                  style={{ color: '#7c2d12' }}>{label}</label>
+                <input id={id} type={type} required minLength={type === 'password' ? 6 : undefined}
+                  value={value} onChange={e => setter(e.target.value)} placeholder={placeholder}
+                  className="w-full px-4 py-3 rounded-lg text-sm outline-none transition-all duration-200"
+                  style={{ background: '#fff', border: '1.5px solid #e5d5b0', color: '#1c0a00' }}
+                  onFocus={e => (e.target.style.borderColor = '#d97706')}
+                  onBlur={e => (e.target.style.borderColor = '#e5d5b0')} />
+              </div>
+            ))}
 
-            <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-amber-900 mb-1.5">
-                Email Address
-              </label>
-              <input
-                id="email" type="email" required
-                value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="w-full px-4 py-3 rounded-xl border-2 border-amber-200 bg-white text-gray-800 placeholder-gray-400 text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition-all"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-amber-900 mb-1.5">
-                Password
-              </label>
-              <input
-                id="password" type="password" required minLength={6}
-                value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                className="w-full px-4 py-3 rounded-xl border-2 border-amber-200 bg-white text-gray-800 placeholder-gray-400 text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition-all"
-              />
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <input
-                id="terms" type="checkbox"
-                checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-amber-600 cursor-pointer"
-              />
-              <label htmlFor="terms" className="text-xs text-amber-800 cursor-pointer leading-relaxed">
+            <label className="flex items-start gap-3 cursor-pointer pt-1">
+              <input type="checkbox" checked={acceptTerms} onChange={e => setAcceptTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded" style={{ accentColor: '#b45309' }} />
+              <span className="text-xs leading-relaxed" style={{ color: '#7c2d12' }}>
                 I accept the{' '}
-                <Link href="/terms" className="font-semibold underline hover:text-amber-600">Terms of Service</Link>
+                <Link href="/terms" className="underline hover:opacity-70">Terms of Service</Link>
                 {' '}and{' '}
-                <Link href="/privacy" className="font-semibold underline hover:text-amber-600">Privacy Policy</Link>.
-                Class recordings will be stored securely for practice review.
-              </label>
-            </div>
+                <Link href="/privacy" className="underline hover:opacity-70">Privacy Policy</Link>
+              </span>
+            </label>
 
-            <button
-              type="submit" disabled={loading}
-              className="w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm tracking-wide transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ background: loading ? '#9ca3af' : 'linear-gradient(135deg, #b45309 0%, #d97706 100%)' }}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Creating your account...
-                </span>
-              ) : 'Create Account'}
+            <button type="submit" disabled={loading}
+              className="w-full py-3.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all duration-200 mt-2"
+              style={{ background: loading ? '#d1d5db' : 'linear-gradient(135deg, #92400e, #b45309)', color: '#fff', letterSpacing: '0.1em' }}>
+              {loading ? 'Creating account…' : 'Register'}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-amber-700">
+          <p className="mt-8 text-center text-xs" style={{ color: '#92400e' }}>
             Already have an account?{' '}
-            <Link href="/login" className="font-bold text-amber-900 hover:underline">
-              Sign in
-            </Link>
+            <Link href="/login" className="font-semibold underline" style={{ color: '#7c2d12' }}>Sign in</Link>
           </p>
         </div>
       </div>
