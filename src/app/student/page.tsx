@@ -46,8 +46,17 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (!user) return;
     apiFetch('/api/payment/proof')
-      .then((r) => r.json())
-      .then((data) => setPayment(data))
+      .then((r) => {
+        if (!r.ok) throw new Error('API error');
+        return r.json();
+      })
+      .then((data) => {
+        if (data?.consecutiveViolations !== undefined) {
+          setPayment(data);
+        } else {
+          setPayment(null);
+        }
+      })
       .catch(() => setPayment(null))
       .finally(() => setLoadingPayment(false));
   }, [user, apiFetch]);
@@ -139,7 +148,7 @@ export default function StudentDashboard() {
       </section>
 
       {/* Payment status shortcut */}
-      {!loadingPayment && payment && (
+      {!loadingPayment && payment && payment.currentStatus && (
         <section>
           <h2 className="section-title mb-3">Payment Status</h2>
           <Link
