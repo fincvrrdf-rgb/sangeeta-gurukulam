@@ -112,23 +112,32 @@ export const DEFAULT_RUBRIC_DIMENSIONS: RubricDimension[] = [
  * The actual Firestore documents are created by the seed script.
  */
 export const GANAMRUTHA_BODHINI_LESSONS = [
-  { lessonNumber: 1, lessonName: 'Swaravali', isContainer: false, batchBandCode: 'A' as BatchBandCode },
-  { lessonNumber: 2, lessonName: 'Jantai', isContainer: false, batchBandCode: 'A' as BatchBandCode },
-  { lessonNumber: 3, lessonName: 'Dhattu', isContainer: false, batchBandCode: 'B' as BatchBandCode },
-  { lessonNumber: 4, lessonName: 'Upper Sthayi', isContainer: false, batchBandCode: 'B' as BatchBandCode },
-  { lessonNumber: 5, lessonName: 'Geetham', isContainer: true, batchBandCode: 'C' as BatchBandCode },
+  { lessonNumber: 1, lessonName: 'Swaravali Varisaigal', isContainer: false, batchBandCode: 'A' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Adhi Thalam (Melam 15)' },
+  { lessonNumber: 2, lessonName: 'Jantai Varisaigal', isContainer: false, batchBandCode: 'A' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Adhi Thalam' },
+  { lessonNumber: 3, lessonName: 'Dhattu Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
+  { lessonNumber: 4, lessonName: 'Upper Sthayi Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
+  { lessonNumber: 5, lessonName: 'Geethams', isContainer: true, batchBandCode: 'C' as BatchBandCode, ragam: null, taalam: null },
 ];
 
 /**
- * Initial Geethams inside Lesson 5.
- * More can be added by the teacher/admin via the UI.
+ * All 13 Geethams from Ganamrutha Bodhini (Lesson 8 in the book).
+ * Mapped as teaching units inside our app's Lesson 5 (Geetham container).
+ * Data extracted from the actual textbook PDF.
  */
 export const INITIAL_GEETHAMS = [
-  { unitNumber: 1, unitName: 'Geetham 1' },
-  { unitNumber: 2, unitName: 'Geetham 2' },
-  { unitNumber: 3, unitName: 'Geetham 3' },
-  { unitNumber: 4, unitName: 'Geetham 4' },
-  { unitNumber: 5, unitName: 'Geetham 5' },
+  { unitNumber: 1, unitName: 'Geetham 1 — Sree Ganapathini', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam' },
+  { unitNumber: 2, unitName: 'Geetham 2 — Kundasura Gouravani', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam' },
+  { unitNumber: 3, unitName: 'Geetham 3 — Kereyaneera', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam' },
+  { unitNumber: 4, unitName: 'Geetham 4 — Padumanaabha', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam' },
+  { unitNumber: 5, unitName: 'Geetham 5 — Analekara', ragam: 'Suddha Saveri', taalam: 'Thisra Jathi Triputa Thalam' },
+  { unitNumber: 6, unitName: 'Geetham 6 — Varaveenamrudupani', ragam: 'Mohana', taalam: 'Chathurasra Jathi Rupaka Thalam' },
+  { unitNumber: 7, unitName: 'Geetham 7 — Kamalajadala', ragam: 'Kalyani', taalam: 'Thisra Jathi Triputa Thalam' },
+  { unitNumber: 8, unitName: 'Geetham 8 — Janakasuthaku', ragam: 'Saveri', taalam: 'Chathurasra Jathi Rupaka Thalam' },
+  { unitNumber: 9, unitName: 'Geetham 9 — Mandara Dhararey', ragam: 'Kamboji', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)' },
+  { unitNumber: 10, unitName: 'Geetham 10 — Raariveelaraa', ragam: 'Arabhi', taalam: 'Thisra Jathi Triputa Thalam' },
+  { unitNumber: 11, unitName: 'Geetham 11 — Kamalasulochana', ragam: 'Ananda Bhairavi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)' },
+  { unitNumber: 12, unitName: 'Geetham 12 — Meenakshi Jaya', ragam: 'Shree', taalam: 'Chathurasra Jathi Dhruva Thalam' },
+  { unitNumber: 13, unitName: 'Geetham 13 — Shree Rama Chandraendra', ragam: 'Bhairavi', taalam: 'Chathurasra Jathi Dhruva Thalam' },
 ];
 
 // =============================================================================

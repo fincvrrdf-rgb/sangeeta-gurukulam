@@ -62,9 +62,9 @@ async function seed() {
     const bookDoc = await booksRef.add({
       title: 'Ganamrutha Bodhini',
       authorName: 'A.S. Panchapakesa Iyer',
-      publisherName: '',
-      edition: '',
-      teacherSummary: 'Foundation syllabus for Carnatic vocal music — covers swaravali, jantai, dhattu, upper sthayi, and geethams.',
+      publisherName: 'Ganamrutha Prachuram, Chennai',
+      edition: 'August 2015',
+      teacherSummary: 'Foundation syllabus (Sangeetha Bala Padam) for Carnatic vocal music — covers swaravali varisaigal, jantai varisaigal, dhattu varisaigal, upper sthayi, 13 geethams, swarajathis, alankaras, and notes in various ragams.',
       isActive: true,
       licenseStatus: 'teacher_authored_only',
       copyrightNotes: 'App stores teacher-authored metadata only. No reproduction of book pages.',
@@ -94,7 +94,7 @@ async function seed() {
         bookId,
         lessonNumber: lesson.lessonNumber,
         lessonName: lesson.lessonName,
-        description: '',
+        description: lesson.ragam ? `Ragam: ${lesson.ragam}` : '',
         isContainer: lesson.isContainer,
         order: lesson.lessonNumber,
         batchBandCode: lesson.batchBandCode,
@@ -130,8 +130,8 @@ async function seed() {
         unitName: lesson.lessonName,
         unitNumber: 1,
         description: '',
-        ragam: null,
-        taalam: null,
+        ragam: lesson.ragam ?? null,
+        taalam: lesson.taalam ?? null,
         composer: null,
         estimatedClassCount: 8,
         lyricsId: null,
@@ -141,7 +141,7 @@ async function seed() {
         createdAt: now,
         updatedAt: now,
       });
-      console.log(`  [+] Unit: ${lesson.lessonName}`);
+      console.log(`  [+] Unit: ${lesson.lessonName} (${lesson.ragam})`);
     }
   }
 
@@ -162,8 +162,8 @@ async function seed() {
           unitName: geetham.unitName,
           unitNumber: geetham.unitNumber,
           description: '',
-          ragam: null,
-          taalam: null,
+          ragam: geetham.ragam ?? null,
+          taalam: geetham.taalam ?? null,
           composer: null,
           estimatedClassCount: 5,
           lyricsId: null,
@@ -173,7 +173,7 @@ async function seed() {
           createdAt: now,
           updatedAt: now,
         });
-        console.log(`  [+] Unit: ${geetham.unitName} (inside Lesson 5)`);
+        console.log(`  [+] Unit: ${geetham.unitName} — ${geetham.ragam} (inside Lesson 5)`);
       }
     }
   }
