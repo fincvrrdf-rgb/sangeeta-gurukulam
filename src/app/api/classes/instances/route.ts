@@ -1,0 +1,109 @@
+/**
+ * API: /api/classes/instances
+ *
+ * GET  — List class instances for a date range (query params: from, to, slotId?)
+ * POST — Create a class instance manually (teacher/admin)
+ */
+
+import { NextRequest } from 'next/server';
+import { requireAuth, authErrorResponse, AuthError } from '@/lib/auth/middleware';
+import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
+import { COLLECTIONS } from '@/domain/constants';
+import type { ClassInstance, ClassSlot } from '@/domain/types';
+import type { QueryConstraint } from '@/lib/firebase/firestore';
+import { z } from 'zod';
+
+const CreateInstanceSchema = z.object({
+  slotId: z.string().min(1),
+  scheduledDate: z.string().min(1),
+  scheduledStartTime: z.string().min(1),
+  scheduledEndTime: z.string().min(1),
+});
+
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+
+    const { searchParams } = new URL(request.url);
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const slotId = searchParams.get('slotId');
+
+    if (!from || !to) {
+      return Response.json({ error: 'Missing required query params: from, to' }, { status: 400 });
+    }
+
+    const constraints: QueryConstraint[] = [
+      { type: 'where', field: 'scheduledStartTime', op: '>=', value: from },
+      { type: 'where', field: 'scheduledStartTime', op: '<=', value: to },
+    ];
+
+    if (slotId) {
+      constraints.push({ type: 'where', field: 'slotId', op: '==', value: slotId });
+    }
+
+    if (auth.role !== 'super_admin') {
+      constraints.push({ type: 'where', field: 'teacherId', op: '==', value: auth.uid });
+    }
+
+    const instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
+
+    return Response.json({ success: true, instances });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const body = await request.json();
+    const parsed = CreateInstanceSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const { slotId, scheduledDate, scheduledStartTime, scheduledEndTime } = parsed.data;
+
+    // Verify slot exists
+    const slot = await getDoc<ClassSlot>(COLLECTIONS.CLASS_SLOTS, slotId);
+    if (!slot) {
+      return Response.json({ error: 'Class slot not found' }, { status: 404 });
+    }
+
+    const instanceId = await createDoc(COLLECTIONS.CLASS_INSTANCES, {
+      slotId,
+      teacherId: slot.teacherId,
+      batchBandId: slot.batchBandId,
+      scheduledStartTime,
+      scheduledEndTime,
+      timezone: slot.timezone,
+      status: 'scheduled',
+      cancellationReason: null,
+      rescheduleTargetInstanceId: null,
+      googleMeetLink: null,
+      googleCalendarEventId: null,
+      lessonPlanItemId: null,
+      teachingUnitId: null,
+      notifiedCancellation: false,
+    });
+
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    await writeAuditLog({
+      actorId: auth.uid,
+      actorRole: auth.role,
+      action: 'CLASS_INSTANCE_CREATED',
+      entityType: 'class_instance',
+      entityId: instanceId,
+      newState: { slotId, scheduledDate, scheduledStartTime, scheduledEndTime },
+      ipAddress,
+      userAgent,
+    });
+
+    return Response.json({ success: true, instanceId });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
