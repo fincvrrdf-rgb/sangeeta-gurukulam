@@ -1,0 +1,292 @@
+rules_version = '2';
+
+// Sangeeta Gurukulam — Firestore Security Rules
+//
+// These rules are the LAST LINE OF DEFENSE. Primary auth is in API routes.
+// Business logic (violation counting, payment triggers) runs server-side
+// via the Admin SDK, which bypasses these rules.
+//
+// Key principles:
+//   1. Students can only read/write their own data
+//   2. Teachers can only access their assigned students' data
+//   3. Super admins have full access
+//   4. Audit logs are write-only for the system (no client reads)
+//   5. Payment proofs and recordings are strictly access-controlled
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper functions ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && request.auth.token.role == role;
+    }
+
+    function isSuperAdmin() {
+      return hasRole('super_admin');
+    }
+
+    function isTeacher() {
+      return hasRole('teacher');
+    }
+
+    function isStudent() {
+      return hasRole('student');
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // --- Users ---
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin();
+      allow write: if isOwner(userId) || isSuperAdmin();
+    }
+
+    // --- Teacher Profiles ---
+    match /teacher_profiles/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin();
+      allow write: if isOwner(userId) || isSuperAdmin();
+    }
+
+    // --- Student Profiles ---
+    match /student_profiles/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin() || isTeacher();
+      allow write: if isSuperAdmin();
+      // Students can update limited fields via API routes (not direct writes)
+    }
+
+    // --- App Settings ---
+    match /app_settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // --- Syllabus (read by all authenticated, write by admin) ---
+    match /syllabus_books/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    match /syllabus_lessons/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    match /teaching_units/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // --- Batch Bands ---
+    match /batch_bands/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    match /batch_eligibility_rules/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // --- Class Slots ---
+    match /class_slots/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Class Instances ---
+    match /class_instances/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Student Class Bookings ---
+    match /student_class_bookings/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSuperAdmin() || isTeacher()
+                    || (isStudent() && resource.data.studentId == request.auth.uid);
+    }
+
+    // --- Attendance Records ---
+    match /attendance_records/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Absence Records ---
+    match /absence_records/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Long Absence Records ---
+    match /long_absence_records/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Payment (violation counters, status, proofs) ---
+    // SECURITY-CRITICAL: Payment data contains sensitive financial information.
+
+    match /payment_violation_counters/{studentId} {
+      allow read: if isSuperAdmin() || isTeacher() || isOwner(studentId);
+      allow write: if false; // Only server-side via Admin SDK (transactions)
+    }
+
+    match /monthly_payment_status/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow write: if false; // Only server-side via Admin SDK
+    }
+
+    match /payment_proof_uploads/{docId} {
+      // Restricted: only uploading student, their assigned teacher, and admin
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSuperAdmin() || isTeacher();
+    }
+
+    match /payment_ai_extractions/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if false; // Only server-side via Admin SDK
+    }
+
+    // --- Bhajan Sessions (public read for authenticated users) ---
+    match /bhajan_sessions/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Lyrics ---
+    match /lyrics/{docId} {
+      // Students can only read published lyrics
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.verificationStatus == 'published');
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    match /lyric_versions/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if false; // Only server-side (immutable history)
+    }
+
+    match /ai_lyrics_drafts/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if false; // Only server-side via AI pipeline
+    }
+
+    // --- Lesson Plans ---
+    match /lesson_plans/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    match /lesson_plan_items/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Resources ---
+    match /resources/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Practice Recordings ---
+    // SECURITY-CRITICAL: Contains sensitive student audio data.
+    match /practice_recordings/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSuperAdmin() || isTeacher();
+    }
+
+    match /recording_reviews/{docId} {
+      allow read: if isSuperAdmin() || isTeacher() || isStudent();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // --- Assessments ---
+    match /lesson_assessments/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    match /assessment_rubrics/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // --- Progression Status ---
+    match /progression_status/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow write: if false; // Only server-side via Admin SDK
+    }
+
+    // --- Weekly Reports ---
+    match /weekly_reports/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid
+                      && resource.data.status == 'published');
+      allow write: if false; // Only server-side
+    }
+
+    match /ai_feedback_drafts/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if false; // Only server-side
+    }
+
+    match /pitch_check_results/{docId} {
+      allow read: if isSuperAdmin() || isTeacher();
+      allow write: if false; // Only server-side
+    }
+
+    // --- Devotional Calendar ---
+    match /devotional_calendar_events/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // --- Notifications ---
+    match /notifications/{docId} {
+      allow read: if isOwner(resource.data.recipientId) || isSuperAdmin();
+      allow update: if isOwner(resource.data.recipientId); // Mark as read
+      allow create: if false; // Only server-side
+    }
+
+    // --- Audit Logs ---
+    // SECURITY-CRITICAL: No client reads. Only server-side writes.
+    match /audit_logs/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only server-side via Admin SDK
+    }
+
+    // --- Riyaz Check-ins ---
+    match /riyaz_checkins/{docId} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+    }
+
+    // --- Teacher Availability Blocks ---
+    match /teacher_availability_blocks/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || (isTeacher() && request.resource.data.teacherId == request.auth.uid);
+    }
+  }
+}

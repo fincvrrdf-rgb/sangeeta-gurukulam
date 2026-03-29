@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
+
+@layer base {
+  body {
+    @apply bg-cream text-charcoal font-body antialiased;
+  }
+
+  h1, h2, h3 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  /* Quick-access dashboard card */
+  .action-card {
+    @apply flex flex-col items-center justify-center gap-2
+           rounded-xl border border-saffron-200 bg-white p-4
+           shadow-sm transition-all duration-200
+           hover:shadow-md hover:border-saffron-400
+           active:scale-[0.98] cursor-pointer
+           min-h-[100px];
+  }
+
+  .action-card-primary {
+    @apply action-card bg-saffron-50 border-saffron-300
+           hover:bg-saffron-100;
+  }
+
+  /* Status badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5
+           text-xs font-medium;
+  }
+
+  .badge-success { @apply bg-green-100 text-green-800; }
+  .badge-warning { @apply bg-yellow-100 text-yellow-800; }
+  .badge-error { @apply bg-red-100 text-red-800; }
+  .badge-info { @apply bg-blue-100 text-blue-800; }
+  .badge-neutral { @apply bg-gray-100 text-gray-800; }
+
+  /* Form inputs */
+  .input {
+    @apply w-full rounded-lg border border-gray-300 px-3 py-2
+           text-sm focus:border-saffron-500 focus:ring-1
+           focus:ring-saffron-500 focus:outline-none
+           placeholder:text-gray-400;
+  }
+
+  .input-error {
+    @apply border-red-500 focus:border-red-500 focus:ring-red-500;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-lg px-4 py-2 text-sm font-medium
+           transition-colors duration-150 focus:outline-none
+           focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-saffron-600 text-white hover:bg-saffron-700
+           focus:ring-saffron-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-charcoal border border-gray-300
+           hover:bg-gray-50 focus:ring-saffron-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700
+           focus:ring-red-500;
+  }
+
+  /* Card containers */
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white p-6 shadow-sm;
+  }
+
+  /* Section headers */
+  .section-title {
+    @apply text-lg font-heading font-semibold text-charcoal;
+  }
+}

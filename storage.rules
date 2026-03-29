@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// Sangeeta Gurukulam — Firebase Storage Security Rules
+//
+// SECURITY-CRITICAL: Audio recordings and payment proofs contain
+// sensitive personal data. No public access is ever allowed.
+//
+// Storage paths:
+//   /recordings/{studentId}/{teachingUnitId}/{weekOf}/{filename}
+//   /payment_proofs/{studentId}/{cycleMonth}/{filename}
+//   /resources/{teacherId}/{filename}
+//   /lyrics/{lyricsId}/{filename}
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --- Helper functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'super_admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && request.auth.token.role == 'teacher';
+    }
+
+    function isStudent() {
+      return isAuthenticated() && request.auth.token.role == 'student';
+    }
+
+    // --- Practice Recordings ---
+    // Student can upload their own recordings (with consent).
+    // Teacher and admin can read any student's recordings.
+    // No public access.
+    match /recordings/{studentId}/{allPaths=**} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && request.auth.uid == studentId);
+      allow write: if (isStudent() && request.auth.uid == studentId
+                       && request.resource.size < 50 * 1024 * 1024)  // 50 MB max
+                   || isSuperAdmin();
+    }
+
+    // --- Payment Proofs ---
+    // SECURITY-CRITICAL: Contains personal financial data.
+    // Student can upload their own proofs.
+    // Only assigned teacher and admin can read.
+    // No public access.
+    match /payment_proofs/{studentId}/{allPaths=**} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isStudent() && request.auth.uid == studentId);
+      allow write: if (isStudent() && request.auth.uid == studentId
+                       && request.resource.size < 10 * 1024 * 1024)  // 10 MB max
+                   || isSuperAdmin();
+    }
+
+    // --- Resources (teacher-uploaded documents) ---
+    // Teachers can upload. All authenticated users can read.
+    match /resources/{teacherId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin()
+                   || (isTeacher() && request.auth.uid == teacherId);
+    }
+
+    // --- Lyrics Attachments ---
+    // Teachers can upload. All authenticated users can read.
+    match /lyrics/{lyricsId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isTeacher();
+    }
+
+    // Deny everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

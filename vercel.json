@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/class-reminders",
+      "schedule": "0 5,16 * * *"
+    },
+    {
+      "path": "/api/cron/bhajan-status",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/planning-check",
+      "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-reports",
+      "schedule": "0 18 * * 5"
+    },
+    {
+      "path": "/api/cron/riyaz-reminder",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
