@@ -52,10 +52,13 @@ export async function POST(request: NextRequest) {
     // Authorization rules:
     // 1. Super admin can set any role for any user
     // 2. A user with no role can set their own role to 'student' only (self-registration)
+    // 3. A user re-registering with the same role (idempotent) — allowed
     if (callerRole === 'super_admin') {
       // Allowed — admin can do anything
     } else if (!callerRole && callerUid === targetUserId && role === 'student') {
       // Self-registration as student — allowed
+    } else if (callerRole === role && callerUid === targetUserId) {
+      // Already has this role, re-registration (idempotent) — allowed
     } else {
       throw new AuthError(403, 'Only Super Admin can assign roles.');
     }
