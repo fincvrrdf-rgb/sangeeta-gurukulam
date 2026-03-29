@@ -58,17 +58,17 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#1a0a00' }}>
+    <div className="min-h-screen flex" style={{ background: '#0a1628' }}>
       {/* Left — brand panel */}
       <div className="hidden lg:flex lg:w-5/12 flex-col items-center justify-center relative px-12"
-        style={{ background: 'linear-gradient(160deg, #1a0a00 0%, #3b1400 50%, #1a0a00 100%)' }}>
+        style={{ background: 'linear-gradient(160deg, #0a1628 0%, #0d3b2e 40%, #1a4a3a 70%, #0a1628 100%)' }}>
         {/* Subtle gold ring decorations */}
         <div className="absolute top-20 left-20 w-40 h-40 rounded-full opacity-10"
-          style={{ border: '1px solid #d97706' }} />
+          style={{ border: '1px solid #22c55e' }} />
         <div className="absolute bottom-24 right-12 w-28 h-28 rounded-full opacity-10"
-          style={{ border: '1px solid #d97706' }} />
+          style={{ border: '1px solid #22c55e' }} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-[420px] rounded-full opacity-5"
-          style={{ border: '1px solid #d97706' }} />
+          style={{ border: '1px solid #22c55e' }} />
 
         <div className="relative z-10 text-center">
           <Image src="/logo.png" alt="Sangeeta Gurukulam" width={240} height={240}
@@ -89,7 +89,7 @@ export default function RegisterPage() {
             <span>Daily Bhajans</span>
           </div>
 
-          <div className="mt-12 w-px h-16 mx-auto opacity-20" style={{ background: '#d97706' }} />
+          <div className="mt-12 w-px h-16 mx-auto opacity-20" style={{ background: '#22c55e' }} />
         </div>
       </div>
 
