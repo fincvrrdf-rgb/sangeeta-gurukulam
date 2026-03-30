@@ -110,38 +110,65 @@ function freqToCents(detected: number, target: number): number {
   return Math.round(1200 * Math.log2(detected / target));
 }
 
+function parabolicInterp(buf: Float32Array<ArrayBuffer>, tau: number): number {
+  if (tau < 1 || tau >= buf.length - 1) return tau;
+  const s0 = buf[tau - 1], s1 = buf[tau], s2 = buf[tau + 1];
+  const denom = 2 * (2 * s1 - s2 - s0);
+  return denom === 0 ? tau : tau + (s2 - s0) / denom;
+}
+
+/**
+ * YIN pitch detection algorithm.
+ * Much more reliable than AMDF for vocal/instrument pitch tracking.
+ * Reference: de Cheveigné & Kawahara, 2002.
+ */
 function detectPitchFromBuffer(buffer: Float32Array<ArrayBuffer>, sampleRate: number): number {
   const SIZE = buffer.length;
+
+  // Silence gate — skip if signal too quiet
   let rms = 0;
   for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
-  rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.008) return -1;
+  if (Math.sqrt(rms / SIZE) < 0.01) return -1;
 
-  const MAX_SAMPLES = Math.floor(SIZE / 2);
-  let bestOffset = -1;
-  let bestCorrelation = 0;
-  let lastCorrelation = 1;
-  let foundGoodCorrelation = false;
+  const W = Math.floor(SIZE / 2);
 
-  for (let offset = 2; offset < MAX_SAMPLES; offset++) {
-    let correlation = 0;
-    for (let i = 0; i < MAX_SAMPLES; i++) {
-      correlation += Math.abs(buffer[i] - buffer[i + offset]);
+  // Step 1 & 2: cumulative mean normalized difference function
+  const d = new Float32Array(W);
+  d[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau < W; tau++) {
+    let sum = 0;
+    for (let i = 0; i < W; i++) {
+      const delta = buffer[i] - buffer[i + tau];
+      sum += delta * delta;
     }
-    correlation = 1 - correlation / MAX_SAMPLES;
-    if (correlation > 0.9 && correlation > lastCorrelation) {
-      foundGoodCorrelation = true;
-      if (correlation > bestCorrelation) {
-        bestCorrelation = correlation;
-        bestOffset = offset;
-      }
-    } else if (foundGoodCorrelation) {
-      break;
-    }
-    lastCorrelation = correlation;
+    runningSum += sum;
+    d[tau] = sum * tau / runningSum; // normalized
   }
-  if (bestOffset === -1 || bestCorrelation < 0.01) return -1;
-  return sampleRate / bestOffset;
+
+  // Vocal range: ~60 Hz (bass) to ~1200 Hz (high soprano)
+  const tauMin = Math.floor(sampleRate / 1200);
+  const tauMax = Math.min(W - 1, Math.floor(sampleRate / 60));
+
+  // Step 3: find first dip below threshold (0.15 is standard YIN value)
+  const THRESHOLD = 0.15;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (d[tau] < THRESHOLD) {
+      // Step 4: slide to local minimum
+      while (tau + 1 < tauMax && d[tau + 1] < d[tau]) tau++;
+      // Step 5: sub-sample via parabolic interpolation
+      return sampleRate / parabolicInterp(d, tau);
+    }
+  }
+
+  // Fallback: global minimum in range (accepts weaker threshold ≤ 0.5)
+  let minVal = Infinity, minTau = -1;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (d[tau] < minVal) { minVal = d[tau]; minTau = tau; }
+  }
+  if (minTau !== -1 && minVal < 0.5) return sampleRate / parabolicInterp(d, minTau);
+
+  return -1;
 }
 
 export default function RiyazPage() {
@@ -279,7 +306,7 @@ export default function RiyazPage() {
       const ctx = getOrCreateAudioCtx();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 4096; // larger buffer → better resolution for low vocal frequencies
       source.connect(analyser);
       analyserRef.current = analyser;
       pitchBufferRef.current = new Float32Array(analyser.fftSize);
