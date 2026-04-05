@@ -50,7 +50,6 @@ export async function GET(request: NextRequest) {
     let instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
 
     if (auth.role === 'teacher') {
-      // Teachers only see their own classes
       instances = instances.filter((i) => i.teacherId === auth.uid);
     } else if (auth.role === 'student') {
       // Students only see classes for their batch band
@@ -61,12 +60,13 @@ export async function GET(request: NextRequest) {
       if (studentProfile?.currentBatchBandId) {
         instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
       }
-      // Alias googleMeetLink as meetLink for client compatibility
-      instances = instances.map((i) => ({
-        ...i,
-        meetLink: i.googleMeetLink ?? undefined,
-      }));
     }
+
+    // Alias googleMeetLink as meetLink for all clients
+    instances = instances.map((i) => ({
+      ...i,
+      meetLink: i.googleMeetLink ?? undefined,
+    }));
 
     return Response.json({ success: true, instances });
   } catch (error) {

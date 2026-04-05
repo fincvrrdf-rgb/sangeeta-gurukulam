@@ -85,8 +85,10 @@ export default function RecordingReviewPage() {
     setError(null);
     try {
       const body: Record<string, unknown> = { status: reviewStatus, feedback };
-      if (pitchScore) body.pitchScore = parseFloat(pitchScore);
-      if (rhythmScore) body.rhythmScore = parseFloat(rhythmScore);
+      const scores: Record<string, number> = {};
+      if (pitchScore) scores.pitchScore = parseFloat(pitchScore);
+      if (rhythmScore) scores.rhythmScore = parseFloat(rhythmScore);
+      if (Object.keys(scores).length > 0) body.scores = scores;
 
       const res = await apiFetch(`/api/recordings/${id}/review`, {
         method: 'POST',

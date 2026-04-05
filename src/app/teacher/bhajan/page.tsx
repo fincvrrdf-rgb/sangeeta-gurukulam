@@ -14,12 +14,12 @@ type BhajanStatus = 'scheduled' | 'live' | 'ended';
 
 interface BhajanSession {
   id: string;
-  date: string;         // YYYY-MM-DD
-  scheduledTime: string; // HH:MM
+  sessionDate: string;   // Firestore field
+  scheduledTime?: string;
   status: BhajanStatus;
-  youtubeLink?: string;
+  youtubeUrl?: string;   // Firestore field
   attendeeCount?: number;
-  timezone: string;
+  timezone?: string;
 }
 
 const STATUS_FLOW: BhajanStatus[] = ['scheduled', 'live', 'ended'];
@@ -78,7 +78,7 @@ export default function BhajanSessionPage() {
         const s: BhajanSession | null = list[0] ?? null;
         setSession(s);
         if (s) {
-          setYoutubeInput(s.youtubeLink ?? '');
+          setYoutubeInput(s.youtubeUrl ?? '');
           setAttendeeInput(s.attendeeCount != null ? String(s.attendeeCount) : '');
         }
       })
@@ -101,7 +101,7 @@ export default function BhajanSessionPage() {
         body: JSON.stringify({ youtubeLink: youtubeInput.trim() }),
       });
       if (!res.ok) throw new Error('Save failed');
-      setSession((prev) => prev ? { ...prev, youtubeLink: youtubeInput.trim() } : prev);
+      setSession((prev) => prev ? { ...prev, youtubeUrl: youtubeInput.trim() } : prev);
       flash('YouTube link saved.');
     } catch {
       setError('Could not save YouTube link. Please try again.');
@@ -209,8 +209,10 @@ export default function BhajanSessionPage() {
                 const s2 = list2[0] ?? null;
                 setSession(s2);
                 if (s2) {
-                  setYoutubeInput(s2.youtubeLink ?? s2.youtubeUrl ?? '');
+                  setYoutubeInput(s2.youtubeUrl ?? '');
                 }
+                // Open YouTube Studio so teacher can go live
+                window.open('https://studio.youtube.com', '_blank', 'noopener');
               } catch (e: unknown) {
                 setError(e instanceof Error ? e.message : 'Could not create session.');
               } finally {
@@ -230,7 +232,7 @@ export default function BhajanSessionPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Today's Session</p>
                 <p className="text-base font-semibold text-charcoal mt-0.5">
-                  {formatDate(session.date)} at {session.scheduledTime}
+                  {formatDate(session.sessionDate)} at {session.scheduledTime}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">{session.timezone}</p>
               </div>
@@ -261,6 +263,16 @@ export default function BhajanSessionPage() {
                 );
               })}
             </div>
+
+            {/* Go Live button */}
+            <a
+              href="https://studio.youtube.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 transition-colors mt-2"
+            >
+              <span className="text-base">&#x1F534;</span> Go Live on YouTube Studio
+            </a>
 
             {/* Advance Status Button */}
             {canAdvance && (
@@ -298,9 +310,9 @@ export default function BhajanSessionPage() {
                 {savingLink ? 'Saving…' : 'Save'}
               </button>
             </div>
-            {session.youtubeLink && (
+            {session.youtubeUrl && (
               <a
-                href={session.youtubeLink}
+                href={session.youtubeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-700 hover:underline"

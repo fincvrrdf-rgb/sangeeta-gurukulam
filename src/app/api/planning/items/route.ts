@@ -15,7 +15,8 @@ import { z } from 'zod';
 const CreateItemSchema = z.object({
   planId: z.string().min(1),
   weekNumber: z.number().int().min(1),
-  teachingUnitId: z.string().min(1),
+  teachingUnitId: z.string().optional().default(''),
+  teachingUnitName: z.string().optional().default(''),
   objectives: z.string().min(1),
   activities: z.string().min(1),
   resources: z.string().optional(),
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
 
     const itemId = await createDoc(COLLECTIONS.LESSON_PLAN_ITEMS, {
       ...parsed.data,
+      teachingUnit: parsed.data.teachingUnitName || parsed.data.teachingUnitId,
       addedBy: auth.uid,
     });
 

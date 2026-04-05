@@ -18,6 +18,9 @@ export async function POST(
     const auth = await requireAuth(request, ['teacher', 'super_admin']);
     const { id } = await params;
 
+    const body = await request.json().catch(() => ({}));
+    const teacherRemarks = typeof body.feedback === 'string' ? body.feedback : null;
+
     const report = await getDoc<{ id: string; status: string }>(COLLECTIONS.WEEKLY_REPORTS, id);
 
     if (!report) {
@@ -32,6 +35,7 @@ export async function POST(
       status: 'published',
       publishedAt: nowISO(),
       publishedBy: auth.uid,
+      ...(teacherRemarks !== null ? { teacherRemarks } : {}),
     });
 
     const { ipAddress, userAgent } = extractRequestMeta(request);
