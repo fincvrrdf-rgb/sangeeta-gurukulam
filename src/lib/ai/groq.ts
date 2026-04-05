@@ -21,6 +21,8 @@ export interface GroqMessage {
 export interface GroqOptions {
   temperature?: number;
   maxTokens?: number;
+  /** Override the model. Defaults to llama-3.3-70b-versatile. Use 'compound-beta' for web-search-backed responses. */
+  model?: string;
 }
 
 /**
@@ -49,7 +51,7 @@ export async function callGroq(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: options.model ?? GROQ_MODEL,
       messages,
       temperature: options.temperature ?? 0.3,
       max_tokens: options.maxTokens ?? 4096,

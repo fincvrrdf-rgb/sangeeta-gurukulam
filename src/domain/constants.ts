@@ -106,6 +106,18 @@ export const DEFAULT_RUBRIC_DIMENSIONS: RubricDimension[] = [
 // Ganamrutha Bodhini — Seed Lesson Structure
 // =============================================================================
 
+export const GANAMRUTHA_BODHINI_COPYRIGHT = {
+  title: 'Ganamrutha Bodhini',
+  author: 'A.S. Panchapakesa Iyer',
+  publisher: 'Ganamrutha Prachuram, Chennai',
+  edition: 'August 2015',
+  amazonUrl: 'https://www.amazon.in/dp/B0DFHZG1J6',
+  notice:
+    'Lesson structure and ragam/taalam metadata referenced from Ganamrutha Bodhini by A.S. Panchapakesa Iyer. ' +
+    'Students are encouraged to purchase a copy for notation and lyrics. ' +
+    'This app stores only teacher-authored planning notes — no book content is reproduced.',
+};
+
 /**
  * Seed data for the Ganamrutha Bodhini syllabus.
  * This maps lesson numbers to their names, container status, and batch band.
@@ -117,6 +129,8 @@ export const GANAMRUTHA_BODHINI_LESSONS = [
   { lessonNumber: 3, lessonName: 'Dhattu Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
   { lessonNumber: 4, lessonName: 'Upper Sthayi Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
   { lessonNumber: 5, lessonName: 'Geethams', isContainer: true, batchBandCode: 'C' as BatchBandCode, ragam: null, taalam: null },
+  { lessonNumber: 6, lessonName: 'Swarajathis', isContainer: true, batchBandCode: 'D' as BatchBandCode, ragam: null, taalam: null },
+  // Lesson 7 (Varnams) is from Book 2 — not seeded here. Add manually when Book 2 is referenced.
 ];
 
 /**
@@ -125,20 +139,31 @@ export const GANAMRUTHA_BODHINI_LESSONS = [
  * Data extracted from the actual textbook PDF.
  */
 export const INITIAL_GEETHAMS = [
-  { unitNumber: 1, unitName: 'Geetham 1 — Sree Ganapathini', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam' },
-  { unitNumber: 2, unitName: 'Geetham 2 — Kundasura Gouravani', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam' },
-  { unitNumber: 3, unitName: 'Geetham 3 — Kereyaneera', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam' },
-  { unitNumber: 4, unitName: 'Geetham 4 — Padumanaabha', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam' },
-  { unitNumber: 5, unitName: 'Geetham 5 — Analekara', ragam: 'Suddha Saveri', taalam: 'Thisra Jathi Triputa Thalam' },
-  { unitNumber: 6, unitName: 'Geetham 6 — Varaveenamrudupani', ragam: 'Mohana', taalam: 'Chathurasra Jathi Rupaka Thalam' },
-  { unitNumber: 7, unitName: 'Geetham 7 — Kamalajadala', ragam: 'Kalyani', taalam: 'Thisra Jathi Triputa Thalam' },
-  { unitNumber: 8, unitName: 'Geetham 8 — Janakasuthaku', ragam: 'Saveri', taalam: 'Chathurasra Jathi Rupaka Thalam' },
-  { unitNumber: 9, unitName: 'Geetham 9 — Mandara Dhararey', ragam: 'Kamboji', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)' },
-  { unitNumber: 10, unitName: 'Geetham 10 — Raariveelaraa', ragam: 'Arabhi', taalam: 'Thisra Jathi Triputa Thalam' },
-  { unitNumber: 11, unitName: 'Geetham 11 — Kamalasulochana', ragam: 'Ananda Bhairavi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)' },
-  { unitNumber: 12, unitName: 'Geetham 12 — Meenakshi Jaya', ragam: 'Shree', taalam: 'Chathurasra Jathi Dhruva Thalam' },
-  { unitNumber: 13, unitName: 'Geetham 13 — Shree Rama Chandraendra', ragam: 'Bhairavi', taalam: 'Chathurasra Jathi Dhruva Thalam' },
+  { unitNumber: 1, unitName: 'Geetham 1 — Sree Ganapathini', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam', estimatedClassCount: 4 },
+  { unitNumber: 2, unitName: 'Geetham 2 — Kundasura Gouravani', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam', estimatedClassCount: 4 },
+  { unitNumber: 3, unitName: 'Geetham 3 — Kereyaneera', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam', estimatedClassCount: 4 },
+  { unitNumber: 4, unitName: 'Geetham 4 — Padumanaabha', ragam: 'Malahari', taalam: 'Thisra Jathi Triputa Thalam', estimatedClassCount: 4 },
+  { unitNumber: 5, unitName: 'Geetham 5 — Analekara', ragam: 'Suddha Saveri', taalam: 'Thisra Jathi Triputa Thalam', estimatedClassCount: 5 },
+  { unitNumber: 6, unitName: 'Geetham 6 — Varaveenamrudupani', ragam: 'Mohana', taalam: 'Chathurasra Jathi Rupaka Thalam', estimatedClassCount: 5 },
+  { unitNumber: 7, unitName: 'Geetham 7 — Kamalajadala', ragam: 'Kalyani', taalam: 'Thisra Jathi Triputa Thalam', estimatedClassCount: 5 },
+  { unitNumber: 8, unitName: 'Geetham 8 — Janakasuthaku', ragam: 'Saveri', taalam: 'Chathurasra Jathi Rupaka Thalam', estimatedClassCount: 5 },
+  { unitNumber: 9, unitName: 'Geetham 9 — Mandara Dhararey', ragam: 'Kamboji', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 5 },
+  { unitNumber: 10, unitName: 'Geetham 10 — Raariveelaraa', ragam: 'Arabhi', taalam: 'Thisra Jathi Triputa Thalam', estimatedClassCount: 5 },
+  { unitNumber: 11, unitName: 'Geetham 11 — Kamalasulochana', ragam: 'Ananda Bhairavi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 6 },
+  { unitNumber: 12, unitName: 'Geetham 12 — Meenakshi Jaya', ragam: 'Shree', taalam: 'Chathurasra Jathi Dhruva Thalam', estimatedClassCount: 6 },
+  { unitNumber: 13, unitName: 'Geetham 13 — Shree Rama Chandraendra', ragam: 'Bhairavi', taalam: 'Chathurasra Jathi Dhruva Thalam', estimatedClassCount: 6 },
 ];
+
+/**
+ * Swarajathis from Ganamrutha Bodhini — Lesson 6.
+ * Source: Ganamrutha Bodhini by A.S. Panchapakesa Iyer.
+ */
+export const INITIAL_SWARAJATHIS = [
+  { unitNumber: 1, unitName: 'Swarajathi 1 — Kamakshi', ragam: 'Bhairavi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 8 },
+  { unitNumber: 2, unitName: 'Swarajathi 2 — Pahi Sree Kamakshi', ragam: 'Todi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 10 },
+];
+
+// INITIAL_VARNAMS removed — Varnams are in Book 2 (not shared). Add when Book 2 is referenced.
 
 // =============================================================================
 // Batch Band Definitions

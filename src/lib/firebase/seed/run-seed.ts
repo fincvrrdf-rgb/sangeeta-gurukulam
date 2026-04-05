@@ -18,6 +18,7 @@ import {
   DEFAULT_APP_SETTINGS,
   GANAMRUTHA_BODHINI_LESSONS,
   INITIAL_GEETHAMS,
+  INITIAL_SWARAJATHIS,
   BATCH_BAND_DEFINITIONS,
   DEFAULT_RUBRIC_DIMENSIONS,
   COLLECTIONS,
@@ -177,6 +178,41 @@ async function seed() {
       }
     }
   }
+
+  // Swarajathis inside Lesson 6
+  const lesson6Id = lessonIds[6];
+  if (lesson6Id) {
+    for (const sw of INITIAL_SWARAJATHIS) {
+      const existing = await unitsRef
+        .where('lessonId', '==', lesson6Id)
+        .where('unitNumber', '==', sw.unitNumber)
+        .get();
+
+      if (existing.empty) {
+        await unitsRef.add({
+          lessonId: lesson6Id,
+          bookId,
+          unitType: 'swarajathi',
+          unitName: sw.unitName,
+          unitNumber: sw.unitNumber,
+          description: '',
+          ragam: sw.ragam ?? null,
+          taalam: sw.taalam ?? null,
+          composer: null,
+          estimatedClassCount: sw.estimatedClassCount,
+          lyricsId: null,
+          order: sw.unitNumber,
+          isActive: true,
+          createdBy: 'seed_script',
+          createdAt: now,
+          updatedAt: now,
+        });
+        console.log(`  [+] Unit: ${sw.unitName} — ${sw.ragam} (inside Lesson 6)`);
+      }
+    }
+  }
+
+  // Varnams are in Book 2 — not seeded here.
 
   // 5. Batch Bands
   const bandsRef = db.collection(COLLECTIONS.BATCH_BANDS);
