@@ -12,6 +12,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
+interface AttachedFile {
+  name: string;
+  storageRef: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 interface LyricsDetail {
   id: string;
   title: string;
@@ -28,6 +35,7 @@ interface LyricsDetail {
   transliteration?: string;
   translation?: string;
   meaning?: string;
+  attachedFiles?: AttachedFile[];
 }
 
 type Tab = 'original' | 'transliteration' | 'translation' | 'meaning';
@@ -214,6 +222,38 @@ export default function LyricsViewerPage() {
           {availableTabs.length === 0 && (
             <div className="card text-center text-gray-400 py-12 text-sm">
               Lyrics content is being prepared. Check back soon!
+            </div>
+          )}
+
+          {/* Attached files */}
+          {lyrics.attachedFiles && lyrics.attachedFiles.length > 0 && (
+            <div className="card space-y-3">
+              <h2 className="text-sm font-semibold text-charcoal">Attached Files</h2>
+              <ul className="space-y-2">
+                {lyrics.attachedFiles.map((file) => (
+                  <li key={file.storageRef} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base flex-shrink-0">
+                        {file.mimeType === 'application/pdf' ? '📄' : '🖼️'}
+                      </span>
+                      <span className="text-sm text-charcoal truncate">{file.name}</span>
+                      {file.sizeBytes ? (
+                        <span className="text-xs text-gray-400 flex-shrink-0">
+                          {(file.sizeBytes / 1024).toFixed(0)} KB
+                        </span>
+                      ) : null}
+                    </div>
+                    <a
+                      href={file.storageRef}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs px-3 py-1.5 flex-shrink-0"
+                    >
+                      &#x2B73; Download
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

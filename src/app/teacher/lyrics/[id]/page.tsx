@@ -7,10 +7,21 @@
 
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { storage } from '@/lib/firebase/client';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { STORAGE_PATHS } from '@/domain/constants';
+
+interface AttachedFile {
+  name: string;
+  storageRef: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
 
 interface LyricsDetail {
   id: string;
@@ -25,6 +36,7 @@ interface LyricsDetail {
   status: 'draft' | 'published';
   versionCount: number;
   updatedAt: string;
+  attachedFiles?: AttachedFile[];
 }
 
 function formatDate(iso: string): string {
@@ -53,6 +65,11 @@ export default function LyricsDetailPage() {
   const [translation, setTranslation] = useState('');
   const [meaning, setMeaning] = useState('');
 
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
@@ -69,6 +86,7 @@ export default function LyricsDetailPage() {
         setTransliteration(data.transliteration ?? '');
         setTranslation(data.translation ?? '');
         setMeaning(data.meaning ?? '');
+        setAttachedFiles(data.attachedFiles ?? []);
       })
       .catch((err) => setError(err.message ?? 'Failed to load lyrics.'))
       .finally(() => setLoading(false));
@@ -114,6 +132,73 @@ export default function LyricsDetailPage() {
       setError(err instanceof Error ? err.message : 'Could not publish lyrics.');
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function handleFileUpload(file: File) {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      setError('Only PDF, JPEG, PNG, or WebP files are allowed.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setError('File must be under 20 MB.');
+      return;
+    }
+    setUploading(true);
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const storagePath = STORAGE_PATHS.lyricsAttachment(id, `${Date.now()}_${file.name}`);
+      const storageRef = ref(storage, storagePath);
+      const task = uploadBytesResumable(storageRef, file);
+      await new Promise<void>((resolve, reject) => {
+        task.on(
+          'state_changed',
+          (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          reject,
+          resolve,
+        );
+      });
+      const downloadUrl = await getDownloadURL(storageRef);
+      const newFile: AttachedFile = {
+        name: file.name,
+        storageRef: downloadUrl,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        uploadedAt: new Date().toISOString(),
+      };
+      const res = await apiFetch(`/api/lyrics/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appendAttachedFile: newFile }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setAttachedFiles((prev) => [...prev, newFile]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      flash('File uploaded and attached.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }
+
+  async function handleRemoveFile(storageRef: string, fileName: string) {
+    if (!confirm(`Remove "${fileName}"?`)) return;
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/lyrics/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeAttachedFile: storageRef }),
+      });
+      if (!res.ok) throw new Error(`Remove failed (${res.status})`);
+      setAttachedFiles((prev) => prev.filter((f) => f.storageRef !== storageRef));
+      flash('File removed.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not remove file.');
     }
   }
 
@@ -246,6 +331,74 @@ export default function LyricsDetailPage() {
           </div>
         </div>
       </form>
+
+      {/* Attached Files */}
+      <div className="card space-y-4">
+        <h2 className="section-title">Attached Files</h2>
+        <p className="text-xs text-gray-500">
+          Attach PDF or image files (sheet music, notation scans, etc.) — students can download them.
+        </p>
+
+        {/* Existing files */}
+        {attachedFiles.length > 0 && (
+          <ul className="space-y-2">
+            {attachedFiles.map((file) => (
+              <li key={file.storageRef} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-lg flex-shrink-0">
+                    {file.mimeType === 'application/pdf' ? '📄' : '🖼️'}
+                  </span>
+                  <a
+                    href={file.storageRef}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate text-saffron-700 hover:underline font-medium"
+                  >
+                    {file.name}
+                  </a>
+                  <span className="text-xs text-gray-400 flex-shrink-0">
+                    {file.sizeBytes ? `${(file.sizeBytes / 1024).toFixed(0)} KB` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFile(file.storageRef, file.name)}
+                  className="flex-shrink-0 text-red-400 hover:text-red-600 text-xs"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Upload input */}
+        <div className="space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileUpload(file);
+            }}
+            className="block w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-medium file:bg-saffron-50 file:text-saffron-700 hover:file:bg-saffron-100 cursor-pointer disabled:opacity-50"
+          />
+          <p className="text-xs text-gray-400">PDF, JPEG, PNG, or WebP · max 20 MB</p>
+          {uploading && (
+            <div className="space-y-1">
+              <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                <div
+                  className="h-full bg-saffron-500 transition-all duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400">Uploading… {uploadProgress}%</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
