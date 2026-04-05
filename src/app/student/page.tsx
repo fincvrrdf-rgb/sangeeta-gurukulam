@@ -132,6 +132,25 @@ export default function StudentDashboard() {
           </div>
           <span className="text-saffron-500 text-lg">→</span>
         </Link>
+
+        {/* YouTube channel link */}
+        <a
+          href="http://www.youtube.com/@SangeetaGurukulam"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 hover:bg-red-100 transition-colors"
+        >
+          <span className="text-xl flex-shrink-0">▶️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">
+              Sangeeta Gurukulam — YouTube Channel
+            </p>
+            <p className="text-xs text-red-600 truncate">
+              youtube.com/@SangeetaGurukulam &nbsp;·&nbsp; Bhajan replays &amp; performances
+            </p>
+          </div>
+          <span className="text-red-400 text-sm flex-shrink-0">↗</span>
+        </a>
       </section>
 
       {/* Quick access grid */}

@@ -21,8 +21,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">
-        {children}
+      <body className="min-h-screen flex flex-col">
+        <div className="flex-1">{children}</div>
+        <footer className="border-t border-gray-100 py-2 text-center">
+          <p className="text-[10px] text-gray-400">
+            Run by{' '}
+            <a
+              href="https://www.cvrrdf.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline text-gray-500"
+            >
+              CVR Research and Development Foundation
+            </a>
+          </p>
+        </footer>
       </body>
     </html>
   );

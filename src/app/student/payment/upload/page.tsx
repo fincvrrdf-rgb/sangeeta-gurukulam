@@ -149,6 +149,40 @@ export default function UploadPaymentPage() {
         </p>
       </div>
 
+      {/* Payment Details */}
+      <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 space-y-3">
+        <p className="text-sm font-semibold text-green-900">Where to Pay</p>
+
+        {/* UPI */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2">
+          <p className="text-xs font-medium text-gray-600 mb-1">UPI (Recommended)</p>
+          <p className="font-mono text-sm text-charcoal font-semibold">9347idfc@axl</p>
+          <p className="text-xs text-gray-500 mt-0.5">or <span className="font-mono">9347331601@idfcfirst</span></p>
+        </div>
+
+        {/* Bank Transfer */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-gray-600 mb-1">Bank Transfer — Regular Fee</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Name: </span>Dr.(Mrs.) AISHWARYA SUKUMARAN NAIR</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Account: </span>10082972125</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">IFSC: </span>IDFB0080224 &nbsp;·&nbsp; <span className="text-gray-500">SWIFT: </span>IDFBINBBMUM</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Bank: </span>IDFC FIRST — East Marredpally Branch</p>
+        </div>
+
+        {/* Donation account */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-gray-600 mb-1">Bank Transfer — Donations / Institutional</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Name: </span>CVR RESEARCH AND DEVELOPMENT FOUNDATION</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Account: </span>10267504385</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">IFSC: </span>IDFB0080201 &nbsp;·&nbsp; <span className="text-gray-500">SWIFT: </span>IDFBINBBMUM</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Bank: </span>IDFC FIRST — Hyderabad (Jubilee Town) Branch</p>
+        </div>
+
+        <p className="text-[10px] text-green-700">
+          After making the payment, upload your screenshot or PDF receipt below.
+        </p>
+      </div>
+
       {/* Info box */}
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3">
         <span className="text-lg flex-shrink-0">&#x2139;&#xFE0F;</span>

@@ -23,13 +23,16 @@ export default function AvailabilityPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ startDate: '', endDate: '', reason: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Load from Firestore directly via teacher_availability_blocks
-    // For now fetch from a simple endpoint pattern
-    setLoading(false);
-    setBlocks([]); // Will be populated from API when endpoint is built
+    if (!user) return;
+    apiFetch('/api/teacher/availability')
+      .then((r) => r.json())
+      .then((data) => setBlocks(Array.isArray(data) ? data : data.blocks ?? []))
+      .catch(() => setBlocks([]))
+      .finally(() => setLoading(false));
   }, [apiFetch, user]);
 
   async function submit() {
@@ -57,6 +60,22 @@ export default function AvailabilityPage() {
       setError('Something went wrong.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function deleteBlock(id: string) {
+    setDeleting(id);
+    try {
+      const r = await apiFetch(`/api/teacher/availability?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (r.ok) {
+        setBlocks((b) => b.filter((block) => block.id !== id));
+      } else {
+        setError('Failed to delete block.');
+      }
+    } catch {
+      setError('Something went wrong.');
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -120,14 +139,23 @@ export default function AvailabilityPage() {
 
       <div className="space-y-3">
         {blocks.map(block => (
-          <div key={block.id} className="card flex items-start justify-between">
-            <div>
+          <div key={block.id} className="card flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
               <p className="font-medium text-charcoal">
-                {block.startDate} → {block.endDate}
+                {block.startDate}{block.endDate !== block.startDate ? ` → ${block.endDate}` : ''}
               </p>
               <p className="text-sm text-gray-500 mt-0.5">{block.reason}</p>
             </div>
-            <span className="badge-warning text-xs">Unavailable</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="badge-warning text-xs">Unavailable</span>
+              <button
+                onClick={() => deleteBlock(block.id)}
+                disabled={deleting === block.id}
+                className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting === block.id ? '…' : '✕ Remove'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

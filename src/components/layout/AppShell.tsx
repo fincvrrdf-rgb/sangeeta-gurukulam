@@ -44,6 +44,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
           {children}
         </main>
+
+        {/* Organisation footer */}
+        <footer className="hidden md:block border-t border-gray-100 px-6 py-2 text-center">
+          <p className="text-[10px] text-gray-400">
+            Run by{' '}
+            <a
+              href="https://www.cvrrdf.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline text-gray-500"
+            >
+              CVR Research and Development Foundation
+            </a>
+          </p>
+        </footer>
       </div>
 
       {/* Mobile bottom nav */}
