@@ -30,12 +30,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const studentId = auth.role === 'student' ? auth.uid : searchParams.get('studentId');
 
-    if (!studentId) {
-      return Response.json({ error: 'studentId query parameter is required for teachers' }, { status: 400 });
+    const filters: { type: 'where'; field: string; op: '=='; value: string }[] = [];
+    if (studentId) {
+      filters.push({ type: 'where', field: 'studentId', op: '==', value: studentId });
     }
 
     const recordings = await queryDocs(COLLECTIONS.PRACTICE_RECORDINGS, [
-      { type: 'where', field: 'studentId', op: '==', value: studentId },
+      ...filters,
       { type: 'orderBy', field: 'createdAt', direction: 'desc' },
     ]);
 

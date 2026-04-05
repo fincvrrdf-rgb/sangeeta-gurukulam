@@ -87,6 +87,25 @@ export default function AssessmentListPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this assessment? This cannot be undone.')) return;
+    setDeleting(id);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/assessments/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Error ${res.status}`);
+      }
+      setAssessments((prev) => prev.filter((a) => a.id !== id));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete assessment.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -136,12 +155,13 @@ export default function AssessmentListPage() {
       ) : (
         <div className="card p-0 divide-y divide-gray-100">
           {/* Column headers */}
-          <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-3 bg-gray-50 rounded-t-xl">
+          <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 px-5 py-3 bg-gray-50 rounded-t-xl">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Student / Unit</span>
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</span>
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</span>
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Result</span>
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider"></span>
           </div>
 
           {assessments.map((a) => {
@@ -186,6 +206,15 @@ export default function AssessmentListPage() {
                 <p className="hidden sm:block text-xs text-gray-500 w-20 flex-shrink-0 text-right">
                   {formatDate(a.createdAt)}
                 </p>
+
+                {/* Delete */}
+                <button
+                  onClick={() => handleDelete(a.id)}
+                  disabled={deleting === a.id}
+                  className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 flex-shrink-0"
+                >
+                  {deleting === a.id ? '…' : 'Delete'}
+                </button>
               </div>
             );
           })}

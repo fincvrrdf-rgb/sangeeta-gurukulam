@@ -118,6 +118,24 @@ export default function MonthlyPlanPage() {
       setAddForm((prev) => ({ ...prev, [field]: e.target.value }));
   }
 
+  async function handleDeleteItem(itemId: string) {
+    if (!confirm('Remove this plan item? This cannot be undone.')) return;
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/planning/items/${itemId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Error ${res.status}`);
+      }
+      setPlan((prev) =>
+        prev ? { ...prev, items: prev.items.filter((i) => i.id !== itemId) } : prev
+      );
+      flash('Item removed.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove item.');
+    }
+  }
+
   async function handleAddItem(e: FormEvent) {
     e.preventDefault();
     if (!addForm.teachingUnit.trim()) {
@@ -132,18 +150,24 @@ export default function MonthlyPlanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           planId: plan?.id,
-          month,
-          week: parseInt(addForm.week),
-          teachingUnit: addForm.teachingUnit,
-          objectives: addForm.objectives,
-          activities: addForm.activities,
+          weekNumber: parseInt(addForm.week),
+          teachingUnitName: addForm.teachingUnit === '__custom__' ? '' : addForm.teachingUnit,
+          objectives: addForm.objectives || ' ',
+          activities: addForm.activities || ' ',
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Error ${res.status}`);
       }
-      const newItem: PlanItem = await res.json();
+      const data = await res.json();
+      const newItem: PlanItem = {
+        id: data.itemId,
+        week: parseInt(addForm.week),
+        teachingUnit: addForm.teachingUnit,
+        objectives: addForm.objectives,
+        activities: addForm.activities,
+      };
       setPlan((prev) =>
         prev ? { ...prev, items: [...prev.items, newItem] } : prev
       );
@@ -339,7 +363,16 @@ export default function MonthlyPlanPage() {
               <div className="divide-y divide-gray-100">
                 {(weekMap.get(week) ?? []).map((item) => (
                   <div key={item.id} className="py-3 first:pt-0 last:pb-0 space-y-1">
-                    <p className="text-sm font-semibold text-charcoal">{item.teachingUnit}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-charcoal">{item.teachingUnit}</p>
+                      <button
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="flex-shrink-0 text-xs text-red-400 hover:text-red-600 transition-colors leading-none mt-0.5"
+                        title="Remove item"
+                      >
+                        ✕
+                      </button>
+                    </div>
                     {item.objectives && (
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-0.5">Objectives</p>

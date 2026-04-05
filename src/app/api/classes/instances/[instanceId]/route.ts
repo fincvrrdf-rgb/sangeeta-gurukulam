@@ -37,7 +37,7 @@ export async function PATCH(
     }
 
     const updates: Record<string, unknown> = { updatedAt: nowISO() };
-    if (parsed.data.meetLink !== undefined) updates.meetLink = parsed.data.meetLink;
+    if (parsed.data.meetLink !== undefined) updates.googleMeetLink = parsed.data.meetLink;
     if (parsed.data.status !== undefined) updates.status = parsed.data.status;
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
 

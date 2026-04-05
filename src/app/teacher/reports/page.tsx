@@ -67,6 +67,7 @@ export default function ReportsListPage() {
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   function flash(msg: string) {
     setSuccessMsg(msg);
@@ -85,6 +86,25 @@ export default function ReportsListPage() {
       .catch((err) => setError(err.message ?? 'Failed to load reports.'))
       .finally(() => setLoading(false));
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this report? This cannot be undone.')) return;
+    setDeleting(id);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/reports/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Error ${res.status}`);
+      }
+      setReports((prev) => prev.filter((r) => r.id !== id));
+      flash('Report deleted.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete report.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   async function handleGenerate() {
     setGenerating(true);
@@ -195,6 +215,15 @@ export default function ReportsListPage() {
               >
                 View
               </Link>
+              {report.status !== 'published' && (
+                <button
+                  onClick={() => handleDelete(report.id)}
+                  disabled={deleting === report.id}
+                  className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 flex-shrink-0"
+                >
+                  {deleting === report.id ? '…' : 'Delete'}
+                </button>
+              )}
             </div>
           ))}
         </div>

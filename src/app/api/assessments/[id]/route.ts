@@ -8,7 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { getDoc, updateDoc } from '@/lib/firebase/firestore';
+import { getDoc, updateDoc, deleteDoc } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
@@ -82,6 +82,40 @@ export async function PATCH(
     });
 
     return Response.json({ success: true, assessmentId: id });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const { id } = await params;
+
+    const existing = await getDoc(COLLECTIONS.LESSON_ASSESSMENTS, id);
+    if (!existing) {
+      return Response.json({ error: 'Assessment not found' }, { status: 404 });
+    }
+
+    await deleteDoc(COLLECTIONS.LESSON_ASSESSMENTS, id);
+
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    await writeAuditLog({
+      actorId: auth.uid,
+      actorRole: auth.role,
+      action: 'ASSESSMENT_DELETED',
+      entityType: 'lesson_assessment',
+      entityId: id,
+      previousState: existing as Record<string, unknown>,
+      newState: null,
+      ipAddress,
+      userAgent,
+    });
+
+    return Response.json({ success: true });
   } catch (error) {
     return authErrorResponse(error);
   }

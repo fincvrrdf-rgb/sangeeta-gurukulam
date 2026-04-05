@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
       devotionalContext: '',
       notes: '',
       managedBy: auth.uid,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
     });
 
     const { ipAddress, userAgent } = extractRequestMeta(request);

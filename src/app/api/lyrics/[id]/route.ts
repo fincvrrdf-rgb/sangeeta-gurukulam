@@ -7,7 +7,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { getDoc, updateDoc, deleteDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { snapshotLyricsVersion } from '@/services/lyrics/versions';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
@@ -123,6 +123,40 @@ export async function PATCH(
     });
 
     return Response.json({ success: true, id });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const { id } = await params;
+
+    const existing = await getDoc<Lyrics>(COLLECTIONS.LYRICS, id);
+    if (!existing) {
+      return Response.json({ error: 'Lyrics not found' }, { status: 404 });
+    }
+
+    await deleteDoc(COLLECTIONS.LYRICS, id);
+
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    await writeAuditLog({
+      actorId: auth.uid,
+      actorRole: auth.role,
+      action: 'LYRICS_DELETED',
+      entityType: 'lyrics',
+      entityId: id,
+      previousState: { title: existing.title },
+      newState: null,
+      ipAddress,
+      userAgent,
+    });
+
+    return Response.json({ success: true });
   } catch (error) {
     return authErrorResponse(error);
   }

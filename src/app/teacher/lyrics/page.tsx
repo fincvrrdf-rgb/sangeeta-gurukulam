@@ -60,6 +60,25 @@ export default function LyricsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>('all');
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this lyrics entry? This cannot be undone.')) return;
+    setDeleting(id);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/lyrics/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Error ${res.status}`);
+      }
+      setLyrics((prev) => prev.filter((l) => l.id !== id));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete lyrics.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -160,6 +179,13 @@ export default function LyricsListPage() {
               >
                 Edit
               </Link>
+              <button
+                onClick={() => handleDelete(item.id)}
+                disabled={deleting === item.id}
+                className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                {deleting === item.id ? '…' : 'Delete'}
+              </button>
             </div>
           ))}
         </div>

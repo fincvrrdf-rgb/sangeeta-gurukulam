@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 const CreatePlanSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
-  batchBandId: z.string().min(1),
+  batchBandId: z.string().optional().default(''),
   notes: z.string().optional(),
   status: z.enum(['draft']).default('draft'),
 });
