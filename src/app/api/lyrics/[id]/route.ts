@@ -14,6 +14,14 @@ import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import type { Lyrics } from '@/domain/types';
 import { z } from 'zod';
 
+const AttachedFileSchema = z.object({
+  name: z.string(),
+  storageRef: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number(),
+  uploadedAt: z.string(),
+});
+
 const UpdateLyricsSchema = z.object({
   title: z.string().min(1).optional(),
   ragam: z.string().optional(),
@@ -23,6 +31,8 @@ const UpdateLyricsSchema = z.object({
   translation: z.string().optional(),
   meaning: z.string().optional(),
   notes: z.string().optional(),
+  appendAttachedFile: AttachedFileSchema.optional(),
+  removeAttachedFile: z.string().optional(), // storageRef to remove
 });
 
 export async function GET(
@@ -84,6 +94,17 @@ export async function PATCH(
         ...existing.translations,
         en: { text: parsed.data.translation, translatedBy: auth.uid, source: 'manual' },
       };
+    }
+
+    if (parsed.data.appendAttachedFile) {
+      const current = (existing.attachedFiles ?? []) as unknown[];
+      updates.attachedFiles = [...current, parsed.data.appendAttachedFile];
+    }
+    if (parsed.data.removeAttachedFile) {
+      const current = (existing.attachedFiles ?? []) as Array<{ storageRef: string }>;
+      updates.attachedFiles = current.filter(
+        (f) => f.storageRef !== parsed.data.removeAttachedFile
+      );
     }
 
     await updateDoc(COLLECTIONS.LYRICS, id, updates);
