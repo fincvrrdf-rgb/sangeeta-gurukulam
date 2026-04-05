@@ -74,6 +74,8 @@ export default function BatchesPage() {
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   // editing
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -126,6 +128,27 @@ export default function BatchesPage() {
     load();
   }, [load]);
 
+  async function handleSeedBatches() {
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const res = await apiFetch('/api/admin/batches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed: true }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Seed failed');
+      setSeedMsg(json.message ?? `${json.created} batch(es) created.`);
+      load();
+      setTimeout(() => setSeedMsg(null), 4000);
+    } catch (e: unknown) {
+      setSeedMsg('⚠️ ' + (e instanceof Error ? e.message : 'Could not seed batches.'));
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   function openEdit(band: BatchBand) {
     if (expandedId === band.id) {
       setExpandedId(null);
@@ -170,14 +193,31 @@ export default function BatchesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-charcoal">
-          Batch Management
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Batch bands A–D — teacher assignments and capacity settings
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-charcoal">
+            Batch Management
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Batch bands A–D — teacher assignments and capacity settings
+          </p>
+        </div>
+        {bands.length === 0 && !loading && (
+          <button
+            onClick={handleSeedBatches}
+            disabled={seeding}
+            className="btn-primary flex-shrink-0"
+          >
+            {seeding ? 'Creating…' : '⚡ Create Standard Batches (A–D)'}
+          </button>
+        )}
       </div>
+
+      {seedMsg && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          {seedMsg}
+        </div>
+      )}
 
       {/* Global success */}
       {saveSuccess && (

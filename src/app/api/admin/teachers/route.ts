@@ -19,9 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request, ['super_admin']);
 
-    const teachers = await queryDocs<Record<string, unknown>>(COLLECTIONS.TEACHER_PROFILES, [
-      { type: 'orderBy', field: 'createdAt', direction: 'desc' },
-    ]);
+    const teachers = await queryDocs<Record<string, unknown>>(COLLECTIONS.TEACHER_PROFILES, []);
 
     // Build email map from Firebase Auth
     const emailMap: Record<string, string> = {};

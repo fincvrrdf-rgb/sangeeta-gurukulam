@@ -2,8 +2,9 @@
  * Admin Syllabus Management — /admin/syllabus
  *
  * Displays Ganamrutha Bodhini book with the full lesson/unit tree.
- * Lessons 1–4 are leaf nodes; Lesson 5 (Geethams) is expandable.
- * Supports inline add/edit for geethams via POST /api/admin/syllabus.
+ * Leaf lessons (1–4) expand to show their single teaching unit.
+ * Container lessons (Geethams, Swarajathis, Varnams) expand to show all units.
+ * Shows "Seed Syllabus" button when empty.
  */
 
 'use client';
@@ -18,14 +19,14 @@ interface SyllabusData {
   units: TeachingUnit[];
 }
 
-interface GeethamFormState {
+interface UnitFormState {
   unitName: string;
   ragam: string;
   taalam: string;
   estimatedClassCount: number;
 }
 
-const EMPTY_FORM: GeethamFormState = {
+const EMPTY_FORM: UnitFormState = {
   unitName: '',
   ragam: '',
   taalam: '',
@@ -42,19 +43,26 @@ function SkeletonRow() {
   );
 }
 
+const LESSON_ICONS: Record<number, string> = {
+  1: '🎵', 2: '🎵', 3: '🎵', 4: '🎵',
+  5: '🎼', 6: '🎼', 7: '🎼',
+};
+
 export default function SyllabusPage() {
   const { user, apiFetch } = useAuthContext();
   const [data, setData] = useState<SyllabusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
-  // Geetham tree expand
-  const [geethamExpanded, setGeethamExpanded] = useState(true);
+  // Which container lessons are expanded
+  const [expandedLessonIds, setExpandedLessonIds] = useState<Set<string>>(new Set());
 
-  // Inline form state
-  const [showAddForm, setShowAddForm] = useState(false);
+  // Inline form state for adding/editing units inside a container lesson
+  const [addingToLessonId, setAddingToLessonId] = useState<string | null>(null);
   const [editingUnit, setEditingUnit] = useState<TeachingUnit | null>(null);
-  const [form, setForm] = useState<GeethamFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<UnitFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -76,24 +84,40 @@ export default function SyllabusPage() {
     load();
   }, [load]);
 
-  const geethamsLesson = data?.lessons.find((l) => l.isContainer);
-  const geethams = geethamsLesson
-    ? (data?.units ?? [])
-        .filter((u) => u.lessonId === geethamsLesson.id)
-        .sort((a, b) => a.unitNumber - b.unitNumber)
-    : [];
-  const leafLessons = (data?.lessons ?? [])
-    .filter((l) => !l.isContainer)
-    .sort((a, b) => a.lessonNumber - b.lessonNumber);
+  async function handleSeedSyllabus() {
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const res = await apiFetch('/api/admin/syllabus/seed', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error ?? 'Seed failed');
+      setSeedMsg(`Syllabus seeded: ${json.lessonsCreated} lessons and ${json.unitsCreated} teaching units created.`);
+      load();
+    } catch (e: unknown) {
+      setSeedMsg('Error: ' + (e instanceof Error ? e.message : 'Could not seed syllabus.'));
+    } finally {
+      setSeeding(false);
+    }
+  }
 
-  function startAdd() {
+  function toggleExpand(lessonId: string) {
+    setExpandedLessonIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lessonId)) next.delete(lessonId);
+      else next.add(lessonId);
+      return next;
+    });
+  }
+
+  function startAdd(lessonId: string) {
+    setAddingToLessonId(lessonId);
     setEditingUnit(null);
     setForm(EMPTY_FORM);
     setSaveError(null);
-    setShowAddForm(true);
   }
 
-  function startEdit(unit: TeachingUnit) {
+  function startEdit(unit: TeachingUnit, lessonId: string) {
+    setAddingToLessonId(lessonId);
     setEditingUnit(unit);
     setForm({
       unitName: unit.unitName,
@@ -102,11 +126,10 @@ export default function SyllabusPage() {
       estimatedClassCount: unit.estimatedClassCount,
     });
     setSaveError(null);
-    setShowAddForm(true);
   }
 
   function cancelForm() {
-    setShowAddForm(false);
+    setAddingToLessonId(null);
     setEditingUnit(null);
     setForm(EMPTY_FORM);
     setSaveError(null);
@@ -114,9 +137,11 @@ export default function SyllabusPage() {
 
   async function submitForm(e: React.FormEvent) {
     e.preventDefault();
-    if (!geethamsLesson || !data?.books[0]) return;
+    if (!addingToLessonId || !data?.books[0]) return;
     setSaving(true);
     setSaveError(null);
+
+    const lessonUnits = (data?.units ?? []).filter((u) => u.lessonId === addingToLessonId);
 
     const payload = editingUnit
       ? {
@@ -132,15 +157,15 @@ export default function SyllabusPage() {
       : {
           type: 'unit',
           data: {
-            lessonId: geethamsLesson.id,
+            lessonId: addingToLessonId,
             bookId: data.books[0].id,
             unitType: 'geetham',
             unitName: form.unitName,
             ragam: form.ragam || null,
             taalam: form.taalam || null,
             estimatedClassCount: form.estimatedClassCount,
-            unitNumber: geethams.length + 1,
-            order: geethams.length + 1,
+            unitNumber: lessonUnits.length + 1,
+            order: lessonUnits.length + 1,
             isActive: true,
           },
         };
@@ -165,112 +190,62 @@ export default function SyllabusPage() {
     }
   }
 
+  const sortedLessons = (data?.lessons ?? []).sort((a, b) => a.lessonNumber - b.lessonNumber);
+  const isEmpty = !loading && (!data?.lessons.length);
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-charcoal">
-            Syllabus Management
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Ganamrutha Bodhini — lessons and teaching units
-          </p>
+          <h1 className="font-heading text-2xl font-bold text-charcoal">Syllabus</h1>
+          <p className="text-sm text-gray-500 mt-1">Ganamrutha Bodhini — lessons and teaching units</p>
         </div>
-        <button onClick={startAdd} className="btn-primary flex-shrink-0">
-          + Add Geetham
-        </button>
+        <div className="flex gap-2 flex-shrink-0">
+          {isEmpty && (
+            <button onClick={handleSeedSyllabus} disabled={seeding} className="btn-primary">
+              {seeding ? 'Seeding…' : '⚡ Seed Full Syllabus'}
+            </button>
+          )}
+          {!isEmpty && (
+            <button onClick={handleSeedSyllabus} disabled={seeding} className="btn-secondary text-xs">
+              {seeding ? 'Seeding…' : '↻ Resync Syllabus'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
-          <button onClick={load} className="ml-3 underline text-red-700 hover:no-underline">
-            Retry
-          </button>
+      {/* Copyright notice */}
+      <div className="rounded-xl border border-saffron-200 bg-saffron-50 px-4 py-3 text-xs text-saffron-800 space-y-1">
+        <p className="font-semibold">
+          Lesson structure sourced from{' '}
+          <a
+            href="https://www.amazon.in/dp/B0DFHZG1J6"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:no-underline text-saffron-700 font-bold"
+          >
+            Ganamrutha Bodhini by A.S. Panchapakesa Iyer
+          </a>{' '}
+          (Ganamrutha Prachuram, Chennai)
+        </p>
+        <p className="text-saffron-700">
+          This app stores only teacher-authored planning metadata (lesson names, ragam, taalam).
+          No book pages, notation, or lyrics text are reproduced.
+          Students are encouraged to purchase a copy for reference.
+        </p>
+      </div>
+
+      {seedMsg && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${seedMsg.startsWith('Error') ? 'border-red-300 bg-red-50 text-red-800' : 'border-green-300 bg-green-50 text-green-800'}`}>
+          {seedMsg}
         </div>
       )}
 
-      {/* Inline Add/Edit Form */}
-      {showAddForm && (
-        <div className="card border-saffron-300 bg-saffron-50">
-          <h3 className="section-title mb-4">
-            {editingUnit ? 'Edit Geetham' : 'New Geetham'}
-          </h3>
-          <form onSubmit={submitForm} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Geetham Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                className="input"
-                value={form.unitName}
-                onChange={(e) => setForm({ ...form, unitName: e.target.value })}
-                placeholder="e.g. Geetham 14 — Ninnu Vina"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Ragam
-                </label>
-                <input
-                  className="input"
-                  value={form.ragam}
-                  onChange={(e) => setForm({ ...form, ragam: e.target.value })}
-                  placeholder="e.g. Kalyani"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Taalam
-                </label>
-                <input
-                  className="input"
-                  value={form.taalam}
-                  onChange={(e) => setForm({ ...form, taalam: e.target.value })}
-                  placeholder="e.g. Adi Thalam"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Estimated Class Count
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={30}
-                className="input w-32"
-                value={form.estimatedClassCount}
-                onChange={(e) =>
-                  setForm({ ...form, estimatedClassCount: Number(e.target.value) })
-                }
-              />
-            </div>
-            {saveError && (
-              <p className="text-sm text-red-600">{saveError}</p>
-            )}
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={saving}
-              >
-                {saving ? 'Saving…' : editingUnit ? 'Save Changes' : 'Add Geetham'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={cancelForm}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+      {error && (
+        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+          <button onClick={load} className="ml-3 underline text-red-700 hover:no-underline">Retry</button>
         </div>
       )}
 
@@ -289,127 +264,177 @@ export default function SyllabusPage() {
               </p>
               <p className="text-xs text-saffron-700 mt-0.5">
                 by {data.books[0].authorName} &mdash;{' '}
-                <span className="capitalize">{data.books[0].licenseStatus?.replace(/_/g, ' ')}</span>
+                <a
+                  href="https://www.amazon.in/dp/B0DFHZG1J6"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:no-underline"
+                >
+                  Buy on Amazon
+                </a>
               </p>
             </div>
           ) : null}
 
-          {/* Leaf lessons (1–4) */}
+          {/* Lessons */}
           {loading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="px-5">
-                  <SkeletonRow />
-                </div>
+            ? Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="px-5"><SkeletonRow /></div>
               ))
-            : leafLessons.map((lesson) => (
-                <div
-                  key={lesson.id}
-                  className="px-5 py-3 border-b border-gray-100 flex items-center gap-3"
-                >
-                  <span className="text-lg">🎵</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-charcoal truncate">
-                      Lesson {lesson.lessonNumber} — {lesson.lessonName}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Batch {lesson.batchBandCode} &middot; Single teaching unit
-                    </p>
-                  </div>
-                  <span
-                    className={`badge ${
-                      lesson.isActive ? 'badge-success' : 'badge-neutral'
-                    }`}
-                  >
-                    {lesson.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              ))}
+            : sortedLessons.map((lesson) => {
+                const lessonUnits = (data?.units ?? [])
+                  .filter((u) => u.lessonId === lesson.id)
+                  .sort((a, b) => a.unitNumber - b.unitNumber);
+                const isExpanded = expandedLessonIds.has(lesson.id);
+                const icon = LESSON_ICONS[lesson.lessonNumber] ?? '🎵';
 
-          {/* Lesson 5 — Geethams (expandable) */}
-          {!loading && geethamsLesson && (
-            <>
-              <button
-                onClick={() => setGeethamExpanded((prev) => !prev)}
-                className="w-full px-5 py-3 border-b border-gray-100 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
-              >
-                <span className="text-lg">🎼</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-charcoal">
-                    Lesson 5 — Geethams
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Batch {geethamsLesson.batchBandCode} &middot;{' '}
-                    {geethams.length} geetham{geethams.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <span className="text-gray-400 text-xs font-medium">
-                  {geethamExpanded ? '▲ collapse' : '▼ expand'}
-                </span>
-              </button>
-
-              {geethamExpanded && (
-                <>
-                  {geethams.length === 0 ? (
-                    <div className="px-10 py-4 text-sm text-gray-400 italic">
-                      No geethams added yet. Use &ldquo;Add Geetham&rdquo; above.
-                    </div>
-                  ) : (
-                    geethams.map((unit) => (
-                      <div
-                        key={unit.id}
-                        className="px-10 py-2.5 border-b border-gray-50 flex items-center gap-3 hover:bg-gray-50 group"
-                      >
-                        <span className="text-base flex-shrink-0">🎶</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-charcoal truncate">
-                            {unit.unitName}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {[unit.ragam, unit.taalam]
-                              .filter(Boolean)
-                              .join(' · ') || 'No ragam/taalam set'}
-                            {' · '}
-                            ~{unit.estimatedClassCount} class
-                            {unit.estimatedClassCount !== 1 ? 'es' : ''}
-                          </p>
-                        </div>
-                        <span
-                          className={`badge flex-shrink-0 ${
-                            unit.isActive ? 'badge-success' : 'badge-neutral'
-                          }`}
-                        >
-                          {unit.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                        <button
-                          onClick={() => startEdit(unit)}
-                          className="text-xs text-saffron-600 hover:underline opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    ))
-                  )}
-                  <div className="px-10 py-2.5">
+                return (
+                  <div key={lesson.id}>
                     <button
-                      onClick={startAdd}
-                      className="text-xs text-saffron-600 hover:underline"
+                      onClick={() => toggleExpand(lesson.id)}
+                      className="w-full px-5 py-3 border-b border-gray-100 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
                     >
-                      + Add another geetham
+                      <span className="text-lg flex-shrink-0">{icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-charcoal">
+                          Lesson {lesson.lessonNumber} — {lesson.lessonName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {lesson.isContainer
+                            ? `${lessonUnits.length} unit${lessonUnits.length !== 1 ? 's' : ''}`
+                            : lessonUnits[0]
+                            ? `${lessonUnits[0].ragam ?? '—'} · ${lessonUnits[0].taalam ?? '—'}`
+                            : 'No unit data'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`badge ${lesson.isActive ? 'badge-success' : 'badge-neutral'}`}>
+                          {lesson.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                        <span className="text-gray-400 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                      </div>
                     </button>
+
+                    {isExpanded && (
+                      <>
+                        {lessonUnits.length === 0 ? (
+                          <div className="px-10 py-3 text-sm text-gray-400 italic border-b border-gray-100">
+                            No units yet.
+                          </div>
+                        ) : (
+                          lessonUnits.map((unit) => (
+                            <div
+                              key={unit.id}
+                              className="px-10 py-2.5 border-b border-gray-50 flex items-center gap-3 hover:bg-gray-50 group"
+                            >
+                              <span className="text-base flex-shrink-0">🎶</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-charcoal truncate">{unit.unitName}</p>
+                                <p className="text-xs text-gray-500">
+                                  {[unit.ragam, unit.taalam].filter(Boolean).join(' · ') || 'No ragam/taalam set'}
+                                  {' · '}~{unit.estimatedClassCount} class{unit.estimatedClassCount !== 1 ? 'es' : ''}
+                                </p>
+                              </div>
+                              <span className={`badge flex-shrink-0 ${unit.isActive ? 'badge-success' : 'badge-neutral'}`}>
+                                {unit.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                              {lesson.isContainer && (
+                                <button
+                                  onClick={() => startEdit(unit, lesson.id)}
+                                  className="text-xs text-saffron-600 hover:underline opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
+
+                        {/* Add unit form / button (container lessons only) */}
+                        {lesson.isContainer && (
+                          <>
+                            {addingToLessonId === lesson.id ? (
+                              <div className="px-5 py-4 border-b border-gray-100 bg-saffron-50">
+                                <h3 className="section-title text-sm mb-3">
+                                  {editingUnit ? 'Edit Unit' : `Add to Lesson ${lesson.lessonNumber}`}
+                                </h3>
+                                <form onSubmit={submitForm} className="space-y-3">
+                                  <input
+                                    className="input text-sm"
+                                    value={form.unitName}
+                                    onChange={(e) => setForm({ ...form, unitName: e.target.value })}
+                                    placeholder="Unit name (e.g. Geetham 14 — Ninnu Vina)"
+                                    required
+                                  />
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <input
+                                      className="input text-sm"
+                                      value={form.ragam}
+                                      onChange={(e) => setForm({ ...form, ragam: e.target.value })}
+                                      placeholder="Ragam"
+                                    />
+                                    <input
+                                      className="input text-sm"
+                                      value={form.taalam}
+                                      onChange={(e) => setForm({ ...form, taalam: e.target.value })}
+                                      placeholder="Taalam"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <label className="text-xs text-gray-600">Est. classes:</label>
+                                    <input
+                                      type="number" min={1} max={30}
+                                      className="input text-sm w-20"
+                                      value={form.estimatedClassCount}
+                                      onChange={(e) => setForm({ ...form, estimatedClassCount: Number(e.target.value) })}
+                                    />
+                                  </div>
+                                  {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+                                  <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary text-sm" disabled={saving}>
+                                      {saving ? 'Saving…' : editingUnit ? 'Save' : 'Add'}
+                                    </button>
+                                    <button type="button" className="btn-secondary text-sm" onClick={cancelForm} disabled={saving}>
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              </div>
+                            ) : (
+                              <div className="px-10 py-2 border-b border-gray-100">
+                                <button
+                                  onClick={() => startAdd(lesson.id)}
+                                  className="text-xs text-saffron-600 hover:underline"
+                                >
+                                  + Add unit
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
-                </>
-              )}
-            </>
-          )}
+                );
+              })}
 
           {/* Empty state */}
-          {!loading && !error && !data?.lessons.length && (
-            <div className="px-5 py-10 text-center text-gray-400 text-sm">
-              No syllabus data found. Run the seed script to populate.
+          {!loading && !error && isEmpty && (
+            <div className="px-5 py-12 text-center">
+              <p className="text-gray-400 text-sm mb-4">No syllabus data found.</p>
+              <button onClick={handleSeedSyllabus} disabled={seeding} className="btn-primary">
+                {seeding ? 'Seeding…' : '⚡ Seed Full Syllabus from Ganamrutha Bodhini'}
+              </button>
             </div>
           )}
         </div>
       </section>
+
+      {!loading && !isEmpty && (
+        <p className="text-xs text-gray-400 text-center">
+          Click any row to expand · Lesson metadata only — no copyrighted content stored
+        </p>
+      )}
     </div>
   );
 }

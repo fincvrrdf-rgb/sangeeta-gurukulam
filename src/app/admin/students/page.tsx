@@ -78,6 +78,10 @@ export default function StudentsPage() {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [bands, setBands] = useState<BatchBand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [waiverStudentId, setWaiverStudentId] = useState<string | null>(null);
+  const [waiverReason, setWaiverReason] = useState('');
+  const [waiving, setWaiving] = useState(false);
+  const [waiverSuccess, setWaiverSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
@@ -118,6 +122,30 @@ export default function StudentsPage() {
     load();
   }, [load]);
 
+  async function handleWaiveViolation(studentId: string) {
+    if (!waiverReason.trim()) return;
+    setWaiving(true);
+    const cycleMonth = new Date().toISOString().slice(0, 7);
+    try {
+      const res = await apiFetch('/api/payment/waive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, cycleMonth, reason: waiverReason.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Failed to waive');
+      setWaiverSuccess('Violation waived successfully.');
+      setWaiverStudentId(null);
+      setWaiverReason('');
+      load();
+      setTimeout(() => setWaiverSuccess(null), 3000);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Could not waive violation.');
+    } finally {
+      setWaiving(false);
+    }
+  }
+
   // Filter logic (client-side)
   const filtered = students.filter((s) => {
     if (filterBand && s.batchBandCode !== filterBand) return false;
@@ -156,6 +184,13 @@ export default function StudentsPage() {
           + Onboard Student
         </Link>
       </div>
+
+      {/* Waiver success */}
+      {waiverSuccess && (
+        <div className="rounded-xl border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
+          ✅ {waiverSuccess}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -212,52 +247,83 @@ export default function StudentsPage() {
           </div>
         ) : (
           filtered.map((s) => (
-            <div
-              key={s.userId}
-              className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-            >
-              <Avatar name={s.fullName} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-charcoal truncate">
-                  {s.fullName}
-                </p>
-                <p className="text-xs text-gray-500 truncate">
-                  {s.email ?? 'No email on record'}
-                </p>
-                <div className="flex items-center gap-3 mt-1 flex-wrap">
-                  {s.batchBandCode && (
-                    <span className="text-xs text-gray-400">
-                      Batch{' '}
-                      <span className="font-medium text-charcoal">
-                        {s.batchBandCode}
+            <div key={s.userId} className="border-b border-gray-100 last:border-0">
+              <div className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors">
+                <Avatar name={s.fullName} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-charcoal truncate">
+                    {s.fullName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {s.email ?? 'No email on record'}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    {s.batchBandCode && (
+                      <span className="text-xs text-gray-400">
+                        Batch <span className="font-medium text-charcoal">{s.batchBandCode}</span>
                       </span>
-                    </span>
-                  )}
-                  {s.consecutiveViolationCount > 0 && (
-                    <span className="text-xs text-red-600 font-medium">
-                      {s.consecutiveViolationCount} violation
-                      {s.consecutiveViolationCount !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {!s.onboardingComplete && (
-                    <span className="badge badge-warning">Onboarding</span>
+                    )}
+                    {(s.consecutiveViolationCount ?? 0) > 0 && (
+                      <span className="text-xs text-red-600 font-medium">
+                        {s.consecutiveViolationCount} violation{s.consecutiveViolationCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {!s.onboardingComplete && (
+                      <span className="badge badge-warning">Onboarding</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <span className={`badge ${paymentBadgeClass(s.isPaymentCompulsoryThisCycle ? 'overdue' : s.paymentStatus)}`}>
+                    {s.isPaymentCompulsoryThisCycle ? 'Payment Due' : paymentLabel(s.paymentStatus)}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {s.billingRegion === 'abroad' ? 'Abroad' : 'India'}
+                  </span>
+                  {(s.isPaymentCompulsoryThisCycle || (s.consecutiveViolationCount ?? 0) > 0) && (
+                    <button
+                      onClick={() => {
+                        setWaiverStudentId(waiverStudentId === s.userId ? null : s.userId);
+                        setWaiverReason('');
+                      }}
+                      className="text-xs text-orange-600 hover:underline"
+                    >
+                      Waive Violation
+                    </button>
                   )}
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <span
-                  className={`badge ${paymentBadgeClass(
-                    s.isPaymentCompulsoryThisCycle ? 'overdue' : s.paymentStatus
-                  )}`}
-                >
-                  {s.isPaymentCompulsoryThisCycle
-                    ? 'Payment Due'
-                    : paymentLabel(s.paymentStatus)}
-                </span>
-                <span className="text-xs text-gray-400">
-                  {s.billingRegion === 'abroad' ? 'Abroad' : 'India'}
-                </span>
-              </div>
+
+              {/* Inline waiver form */}
+              {waiverStudentId === s.userId && (
+                <div className="px-5 pb-4 bg-orange-50 border-t border-orange-100">
+                  <p className="text-xs font-semibold text-orange-800 mt-3 mb-2">
+                    Override violation for {s.fullName}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="input text-xs flex-1"
+                      placeholder="Reason for waiver (e.g. medical, family emergency)…"
+                      value={waiverReason}
+                      onChange={(e) => setWaiverReason(e.target.value)}
+                    />
+                    <button
+                      onClick={() => handleWaiveViolation(s.userId)}
+                      disabled={waiving || !waiverReason.trim()}
+                      className="btn-primary text-xs px-3 whitespace-nowrap"
+                    >
+                      {waiving ? 'Waiving…' : 'Confirm Waiver'}
+                    </button>
+                    <button
+                      onClick={() => setWaiverStudentId(null)}
+                      className="btn-secondary text-xs px-3"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}

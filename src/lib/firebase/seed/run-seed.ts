@@ -17,6 +17,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import {
   DEFAULT_APP_SETTINGS,
   GANAMRUTHA_BODHINI_LESSONS,
+  GANAMRUTHA_BODHINI_COPYRIGHT,
   INITIAL_GEETHAMS,
   INITIAL_SWARAJATHIS,
   BATCH_BAND_DEFINITIONS,
@@ -61,14 +62,15 @@ async function seed() {
 
   if (existingBooks.empty) {
     const bookDoc = await booksRef.add({
-      title: 'Ganamrutha Bodhini',
-      authorName: 'A.S. Panchapakesa Iyer',
-      publisherName: 'Ganamrutha Prachuram, Chennai',
-      edition: 'August 2015',
-      teacherSummary: 'Foundation syllabus (Sangeetha Bala Padam) for Carnatic vocal music — covers swaravali varisaigal, jantai varisaigal, dhattu varisaigal, upper sthayi, 13 geethams, swarajathis, alankaras, and notes in various ragams.',
+      title: GANAMRUTHA_BODHINI_COPYRIGHT.title,
+      authorName: GANAMRUTHA_BODHINI_COPYRIGHT.author,
+      publisherName: GANAMRUTHA_BODHINI_COPYRIGHT.publisher,
+      edition: GANAMRUTHA_BODHINI_COPYRIGHT.edition,
+      amazonUrl: GANAMRUTHA_BODHINI_COPYRIGHT.amazonUrl,
+      teacherSummary: 'Foundation syllabus (Sangeetha Bala Padam) for Carnatic vocal music — Swaravali Varisaigal, Jantai Varisaigal, Dhattu Varisaigal, Alankarams, 13 Geethams, 2 Swarajathis, 5 Varnams.',
       isActive: true,
       licenseStatus: 'teacher_authored_only',
-      copyrightNotes: 'App stores teacher-authored metadata only. No reproduction of book pages.',
+      copyrightNotice: GANAMRUTHA_BODHINI_COPYRIGHT.notice,
       createdAt: now,
       updatedBy: 'seed_script',
       updatedAt: now,
@@ -166,7 +168,7 @@ async function seed() {
           ragam: geetham.ragam ?? null,
           taalam: geetham.taalam ?? null,
           composer: null,
-          estimatedClassCount: 5,
+          estimatedClassCount: geetham.estimatedClassCount ?? 5,
           lyricsId: null,
           order: geetham.unitNumber,
           isActive: true,

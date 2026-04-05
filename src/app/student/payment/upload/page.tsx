@@ -39,6 +39,7 @@ export default function UploadPaymentPage() {
   const { user, apiFetch } = useAuthContext();
 
   const [cycleMonth, setCycleMonth] = useState(currentMonth());
+  const [paymentType, setPaymentType] = useState<'regular' | 'donation'>('regular');
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -113,6 +114,7 @@ export default function UploadPaymentPage() {
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,
+          paymentType,
         }),
       });
 
@@ -147,6 +149,40 @@ export default function UploadPaymentPage() {
         </p>
       </div>
 
+      {/* Payment Details */}
+      <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 space-y-3">
+        <p className="text-sm font-semibold text-green-900">Where to Pay</p>
+
+        {/* UPI */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2">
+          <p className="text-xs font-medium text-gray-600 mb-1">UPI (Recommended)</p>
+          <p className="font-mono text-sm text-charcoal font-semibold">9347idfc@axl</p>
+          <p className="text-xs text-gray-500 mt-0.5">or <span className="font-mono">9347331601@idfcfirst</span></p>
+        </div>
+
+        {/* Bank Transfer */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-gray-600 mb-1">Bank Transfer — Regular Fee</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Name: </span>Dr.(Mrs.) AISHWARYA SUKUMARAN NAIR</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Account: </span>10082972125</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">IFSC: </span>IDFB0080224 &nbsp;·&nbsp; <span className="text-gray-500">SWIFT: </span>IDFBINBBMUM</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Bank: </span>IDFC FIRST — East Marredpally Branch</p>
+        </div>
+
+        {/* Donation account */}
+        <div className="bg-white rounded-lg border border-green-200 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-gray-600 mb-1">Bank Transfer — Donations / Institutional</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Name: </span>CVR RESEARCH AND DEVELOPMENT FOUNDATION</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Account: </span>10267504385</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">IFSC: </span>IDFB0080201 &nbsp;·&nbsp; <span className="text-gray-500">SWIFT: </span>IDFBINBBMUM</p>
+          <p className="text-xs text-charcoal"><span className="text-gray-500">Bank: </span>IDFC FIRST — Hyderabad (Jubilee Town) Branch</p>
+        </div>
+
+        <p className="text-[10px] text-green-700">
+          After making the payment, upload your screenshot or PDF receipt below.
+        </p>
+      </div>
+
       {/* Info box */}
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3">
         <span className="text-lg flex-shrink-0">&#x2139;&#xFE0F;</span>
@@ -172,8 +208,46 @@ export default function UploadPaymentPage() {
         </div>
       )}
 
+      {/* Donation banner */}
+      <div className="rounded-xl border border-saffron-200 bg-saffron-50 px-4 py-3 text-sm text-saffron-800">
+        <p className="font-semibold mb-1">💛 Donate to support the Gurukulam</p>
+        <p className="text-xs">
+          Payment is optional unless you have missed classes. You are always welcome to donate any amount to support the academy&apos;s mission.
+          Select &quot;Donation&quot; below if you wish to contribute voluntarily.
+        </p>
+      </div>
+
       {/* Form */}
       <form onSubmit={handleSubmit} className="card space-y-5">
+        {/* Payment type */}
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1.5">Payment type</label>
+          <div className="flex gap-4">
+            {([
+              { value: 'regular', label: 'Regular / Compulsory' },
+              { value: 'donation', label: '💛 Voluntary Donation' },
+            ] as const).map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentType"
+                  value={value}
+                  checked={paymentType === value}
+                  onChange={() => setPaymentType(value)}
+                  className="accent-saffron-600"
+                  disabled={isSubmitting}
+                />
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
+          </div>
+          {paymentType === 'donation' && (
+            <p className="text-xs text-saffron-700 mt-1">
+              Thank you! Donations are acknowledged but do not clear compulsory payment obligations.
+            </p>
+          )}
+        </div>
+
         {/* Month selector */}
         <div>
           <label

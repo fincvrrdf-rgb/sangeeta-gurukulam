@@ -106,6 +106,11 @@ export const DEFAULT_RUBRIC_DIMENSIONS: RubricDimension[] = [
 // Ganamrutha Bodhini — Seed Lesson Structure
 // =============================================================================
 
+/**
+ * Copyright notice for the Ganamrutha Bodhini textbook.
+ * The app stores only teacher-authored metadata (lesson names, ragam, taalam).
+ * No reproduction of book pages, notation, or lyrics text.
+ */
 export const GANAMRUTHA_BODHINI_COPYRIGHT = {
   title: 'Ganamrutha Bodhini',
   author: 'A.S. Panchapakesa Iyer',
@@ -127,16 +132,16 @@ export const GANAMRUTHA_BODHINI_LESSONS = [
   { lessonNumber: 1, lessonName: 'Swaravali Varisaigal', isContainer: false, batchBandCode: 'A' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Adhi Thalam (Melam 15)' },
   { lessonNumber: 2, lessonName: 'Jantai Varisaigal', isContainer: false, batchBandCode: 'A' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Adhi Thalam' },
   { lessonNumber: 3, lessonName: 'Dhattu Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
-  { lessonNumber: 4, lessonName: 'Upper Sthayi Varisaigal', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Various Thalams' },
+  { lessonNumber: 4, lessonName: 'Alankarams (Sapta Tala)', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Sapta Thalams' },
   { lessonNumber: 5, lessonName: 'Geethams', isContainer: true, batchBandCode: 'C' as BatchBandCode, ragam: null, taalam: null },
   { lessonNumber: 6, lessonName: 'Swarajathis', isContainer: true, batchBandCode: 'D' as BatchBandCode, ragam: null, taalam: null },
   // Lesson 7 (Varnams) is from Book 2 — not seeded here. Add manually when Book 2 is referenced.
 ];
 
 /**
- * All 13 Geethams from Ganamrutha Bodhini (Lesson 8 in the book).
- * Mapped as teaching units inside our app's Lesson 5 (Geetham container).
- * Data extracted from the actual textbook PDF.
+ * All 13 Geethams from Ganamrutha Bodhini.
+ * Mapped as teaching units inside Lesson 5 (Geetham container).
+ * Source: Ganamrutha Bodhini by A.S. Panchapakesa Iyer.
  */
 export const INITIAL_GEETHAMS = [
   { unitNumber: 1, unitName: 'Geetham 1 — Sree Ganapathini', ragam: 'Malahari', taalam: 'Chathurasra Jathi Rupaka Thalam', estimatedClassCount: 4 },

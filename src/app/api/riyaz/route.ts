@@ -27,7 +27,6 @@ export async function GET(request: NextRequest) {
     const records = await queryDocs<Record<string, unknown>>(COLLECTIONS.RIYAZ_CHECKINS, [
       { type: 'where', field: 'studentId', op: '==', value: studentId },
     ]);
-
     // Sort client-side to avoid composite index requirement
     records.sort((a, b) =>
       String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))

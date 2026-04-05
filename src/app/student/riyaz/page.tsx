@@ -12,9 +12,10 @@ import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface RiyazCheckin {
   id: string;
-  duration: number;   // minutes
+  duration?: number;        // legacy
+  durationMinutes?: number; // current field name
   notes?: string;
-  createdAt: string;  // ISO date string
+  createdAt: string;
 }
 
 interface RiyazStats {
@@ -65,246 +66,6 @@ function StreakFlame({ count }: { count: number }) {
   );
 }
 
-// ============================================================
-// Swara Pitch Tuner
-// ============================================================
-
-/**
- * Maya Malava Gowla ratios — Ri1 = 16/15, Ga3 = 5/4, Ma1 = 4/3,
- * Pa = 3/2, Dha1 = 8/5, Ni3 = 15/8, Sa(upper) = 2/1.
- * These ratios are multiplied by the user's chosen base Sa frequency.
- */
-const SWARA_RATIOS: [string, number][] = [
-  ['Sa',  1],
-  ['Ri',  16/15],
-  ['Ga',  5/4],
-  ['Ma',  4/3],
-  ['Pa',  3/2],
-  ['Dha', 8/5],
-  ['Ni',  15/8],
-  ['Sa\u0307', 2],  // upper Sa
-];
-
-/** Base Sa presets — male voice ~130 Hz (C3), female voice ~260 Hz (C4) */
-const VOICE_PRESETS: { label: string; freq: number }[] = [
-  { label: 'Male Low (C3 — 130 Hz)', freq: 130.81 },
-  { label: 'Male Mid (D3 — 147 Hz)', freq: 146.83 },
-  { label: 'Female Low (C4 — 261 Hz)', freq: 261.63 },
-  { label: 'Female Mid (D4 — 294 Hz)', freq: 293.66 },
-];
-
-/** YIN-like pitch detection from audio buffer */
-function detectPitch(buffer: Float32Array, sampleRate: number): number {
-  const W = Math.floor(buffer.length / 2);
-  // RMS silence gate
-  let rms = 0;
-  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
-  rms = Math.sqrt(rms / buffer.length);
-  if (rms < 0.01) return -1;
-
-  // YIN cumulative mean normalized difference
-  const d = new Float32Array(W);
-  d[0] = 1;
-  let runSum = 0;
-  for (let tau = 1; tau < W; tau++) {
-    let sum = 0;
-    for (let i = 0; i < W; i++) {
-      const delta = buffer[i] - buffer[i + tau];
-      sum += delta * delta;
-    }
-    runSum += sum;
-    d[tau] = runSum === 0 ? 1 : (sum * tau) / runSum;
-  }
-
-  // Find first dip below threshold
-  const threshold = 0.15;
-  const minTau = Math.floor(sampleRate / 1200); // max 1200 Hz
-  const maxTau = Math.floor(sampleRate / 60);    // min 60 Hz
-  let bestTau = -1;
-  for (let tau = minTau; tau < Math.min(maxTau, W); tau++) {
-    if (d[tau] < threshold) {
-      while (tau + 1 < W && d[tau + 1] < d[tau]) tau++;
-      bestTau = tau;
-      break;
-    }
-  }
-  if (bestTau < 1) return -1;
-
-  // Parabolic interpolation
-  if (bestTau > 0 && bestTau < W - 1) {
-    const s0 = d[bestTau - 1], s1 = d[bestTau], s2 = d[bestTau + 1];
-    const denom = 2 * (2 * s1 - s2 - s0);
-    if (denom !== 0) bestTau += (s2 - s0) / denom;
-  }
-
-  return sampleRate / bestTau;
-}
-
-/** Given a frequency and base Sa, return nearest swara & cents offset */
-function freqToSwara(freq: number, baseSa: number): { swara: string; cents: number } | null {
-  if (freq <= 0) return null;
-
-  let bestSwara = '';
-  let bestCents = Infinity;
-
-  // Check current octave and one above/below
-  for (const octMul of [0.5, 1, 2]) {
-    for (const [name, ratio] of SWARA_RATIOS) {
-      const target = baseSa * ratio * octMul;
-      const cents = 1200 * Math.log2(freq / target);
-      if (Math.abs(cents) < Math.abs(bestCents)) {
-        bestCents = cents;
-        bestSwara = octMul < 1 ? name.toLowerCase() : octMul > 1 && !name.includes('\u0307') ? name + '\u0307' : name;
-      }
-    }
-  }
-
-  return Math.abs(bestCents) < 100 ? { swara: bestSwara, cents: Math.round(bestCents) } : null;
-}
-
-function SwaraTuner() {
-  const [baseSa, setBaseSa] = useState(261.63); // default female C4
-  const [listening, setListening] = useState(false);
-  const [detectedFreq, setDetectedFreq] = useState(-1);
-  const [detectedSwara, setDetectedSwara] = useState<{ swara: string; cents: number } | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const rafRef = useRef<number>(0);
-
-  const tick = useCallback(() => {
-    if (!analyserRef.current || !audioCtxRef.current) return;
-    const buf = new Float32Array(analyserRef.current.fftSize);
-    analyserRef.current.getFloatTimeDomainData(buf);
-    const freq = detectPitch(buf, audioCtxRef.current.sampleRate);
-    setDetectedFreq(freq > 0 ? Math.round(freq * 10) / 10 : -1);
-    setDetectedSwara(freq > 0 ? freqToSwara(freq, baseSa) : null);
-    rafRef.current = requestAnimationFrame(tick);
-  }, [baseSa]);
-
-  const start = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const ctx = new AudioContext();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 4096;
-      const source = ctx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      audioCtxRef.current = ctx;
-      analyserRef.current = analyser;
-      sourceRef.current = source;
-      setListening(true);
-      rafRef.current = requestAnimationFrame(tick);
-    } catch {
-      // microphone permission denied
-    }
-  }, [tick]);
-
-  const stop = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    sourceRef.current?.disconnect();
-    audioCtxRef.current?.close();
-    audioCtxRef.current = null;
-    analyserRef.current = null;
-    sourceRef.current = null;
-    setListening(false);
-    setDetectedFreq(-1);
-    setDetectedSwara(null);
-  }, []);
-
-  useEffect(() => {
-    return () => { cancelAnimationFrame(rafRef.current); };
-  }, []);
-
-  // When baseSa changes and already listening, update the animation loop
-  useEffect(() => {
-    if (listening) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(tick);
-    }
-  }, [baseSa, listening, tick]);
-
-  const centsColor = detectedSwara
-    ? Math.abs(detectedSwara.cents) <= 15 ? 'text-green-600'
-    : Math.abs(detectedSwara.cents) <= 40 ? 'text-yellow-600'
-    : 'text-red-500'
-    : 'text-gray-400';
-
-  return (
-    <div className="card space-y-4">
-      <h2 className="section-title">Live Swara Tuner</h2>
-      <p className="text-xs text-gray-500">
-        Select your voice range, then sing to see which swara you are hitting.
-      </p>
-
-      {/* Voice preset selector */}
-      <div>
-        <label className="block text-sm font-medium text-charcoal mb-1.5">
-          Voice Range (base Sa)
-        </label>
-        <select
-          className="input"
-          value={baseSa}
-          onChange={(e) => setBaseSa(Number(e.target.value))}
-        >
-          {VOICE_PRESETS.map((p) => (
-            <option key={p.freq} value={p.freq}>{p.label}</option>
-          ))}
-        </select>
-        <p className="text-xs text-gray-400 mt-1">
-          Sa = {baseSa.toFixed(1)} Hz. Female voices typically sit an octave above male voices for the same note.
-        </p>
-      </div>
-
-      {/* Swara reference table */}
-      <div className="flex flex-wrap gap-2">
-        {SWARA_RATIOS.map(([name, ratio]) => (
-          <span key={name} className={`px-2 py-1 rounded text-xs font-mono border ${
-            detectedSwara?.swara === name ? 'bg-saffron-100 border-saffron-400 text-saffron-800 font-bold' : 'bg-gray-50 border-gray-200 text-gray-600'
-          }`}>
-            {name} {Math.round(baseSa * ratio)} Hz
-          </span>
-        ))}
-      </div>
-
-      {/* Pitch display */}
-      <div className="text-center py-4 space-y-2">
-        {listening ? (
-          <>
-            <p className="text-5xl font-bold text-charcoal">
-              {detectedSwara ? detectedSwara.swara : (detectedFreq > 0 ? '...' : '---')}
-            </p>
-            {detectedFreq > 0 && (
-              <p className="text-sm text-gray-500">
-                {detectedFreq} Hz
-                {detectedSwara && (
-                  <span className={`ml-2 font-semibold ${centsColor}`}>
-                    {detectedSwara.cents > 0 ? '+' : ''}{detectedSwara.cents} cents
-                  </span>
-                )}
-              </p>
-            )}
-            {!detectedSwara && detectedFreq <= 0 && (
-              <p className="text-sm text-gray-400">Listening... sing or hum into your mic</p>
-            )}
-          </>
-        ) : (
-          <p className="text-gray-400 text-sm">Tap Start to begin</p>
-        )}
-      </div>
-
-      {/* Start/Stop button */}
-      <button
-        type="button"
-        onClick={listening ? stop : start}
-        className={listening ? 'btn-danger w-full' : 'btn-primary w-full'}
-      >
-        {listening ? 'Stop Tuner' : 'Start Tuner'}
-      </button>
-    </div>
-  );
-}
-
 function SkeletonCard() {
   return (
     <div className="card animate-pulse space-y-2">
@@ -314,6 +75,99 @@ function SkeletonCard() {
   );
 }
 
+const SA_PITCHES = ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'];
+
+// Base frequencies for each pitch (A4=440)
+const PITCH_FREQS: Record<string, number> = {
+  'C': 261.63, 'C#/Db': 277.18, 'D': 293.66, 'D#/Eb': 311.13,
+  'E': 329.63, 'F': 349.23, 'F#/Gb': 369.99, 'G': 392.00,
+  'G#/Ab': 415.30, 'A': 440.00, 'A#/Bb': 466.16, 'B': 493.88,
+};
+
+// Maya Malava Gowla swara ratios (just intonation)
+// Raga: S R1 G3 M1 P D1 N3 S
+//   Ri1 = Shuddha Rishabha  = 16/15 (minor second above Sa)
+//   Ga3 = Antara Gandhara   = 5/4   (major third)
+//   Ma1 = Shuddha Madhyama  = 4/3   (perfect fourth)
+//   Pa  = Panchama          = 3/2   (perfect fifth)
+//   Dha1 = Shuddha Dhaivata = 8/5   (minor sixth)
+//   Ni3 = Kakali Nishada    = 15/8  (major seventh)
+const SWARA_RATIOS = [
+  { name: 'Sa',   symbol: 'S', ratio: 1 },
+  { name: 'Ri₁',  symbol: 'R', ratio: 16/15 },
+  { name: 'Ga₃',  symbol: 'G', ratio: 5/4 },
+  { name: 'Ma₁',  symbol: 'M', ratio: 4/3 },
+  { name: 'Pa',   symbol: 'P', ratio: 3/2 },
+  { name: 'Dha₁', symbol: 'D', ratio: 8/5 },
+  { name: 'Ni₃',  symbol: 'N', ratio: 15/8 },
+  { name: 'Sa\'', symbol: 'Ṡ', ratio: 2 },
+];
+
+function freqToCents(detected: number, target: number): number {
+  return Math.round(1200 * Math.log2(detected / target));
+}
+
+function parabolicInterp(buf: Float32Array<ArrayBuffer>, tau: number): number {
+  if (tau < 1 || tau >= buf.length - 1) return tau;
+  const s0 = buf[tau - 1], s1 = buf[tau], s2 = buf[tau + 1];
+  const denom = 2 * (2 * s1 - s2 - s0);
+  return denom === 0 ? tau : tau + (s2 - s0) / denom;
+}
+
+/**
+ * YIN pitch detection algorithm.
+ * Much more reliable than AMDF for vocal/instrument pitch tracking.
+ * Reference: de Cheveigné & Kawahara, 2002.
+ */
+function detectPitchFromBuffer(buffer: Float32Array<ArrayBuffer>, sampleRate: number): number {
+  const SIZE = buffer.length;
+
+  // Silence gate — skip if signal too quiet
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
+  if (Math.sqrt(rms / SIZE) < 0.01) return -1;
+
+  const W = Math.floor(SIZE / 2);
+
+  // Step 1 & 2: cumulative mean normalized difference function
+  const d = new Float32Array(W);
+  d[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau < W; tau++) {
+    let sum = 0;
+    for (let i = 0; i < W; i++) {
+      const delta = buffer[i] - buffer[i + tau];
+      sum += delta * delta;
+    }
+    runningSum += sum;
+    d[tau] = sum * tau / runningSum; // normalized
+  }
+
+  // Vocal range: ~60 Hz (bass) to ~1200 Hz (high soprano)
+  const tauMin = Math.floor(sampleRate / 1200);
+  const tauMax = Math.min(W - 1, Math.floor(sampleRate / 60));
+
+  // Step 3: find first dip below threshold (0.15 is standard YIN value)
+  const THRESHOLD = 0.15;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (d[tau] < THRESHOLD) {
+      // Step 4: slide to local minimum
+      while (tau + 1 < tauMax && d[tau + 1] < d[tau]) tau++;
+      // Step 5: sub-sample via parabolic interpolation
+      return sampleRate / parabolicInterp(d, tau);
+    }
+  }
+
+  // Fallback: global minimum in range (accepts weaker threshold ≤ 0.5)
+  let minVal = Infinity, minTau = -1;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (d[tau] < minVal) { minVal = d[tau]; minTau = tau; }
+  }
+  if (minTau !== -1 && minVal < 0.5) return sampleRate / parabolicInterp(d, minTau);
+
+  return -1;
+}
+
 export default function RiyazPage() {
   const { user, apiFetch } = useAuthContext();
 
@@ -321,6 +175,30 @@ export default function RiyazPage() {
   const [stats, setStats] = useState<RiyazStats | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Tanpura + pitch tuner state
+  const [showPitchCheck, setShowPitchCheck] = useState(false);
+  const [selectedPitch, setSelectedPitch] = useState('C');
+  const [tanpuraOn, setTanpuraOn] = useState(false);
+  const [currentSwaraIdx, setCurrentSwaraIdx] = useState(0);
+  const [detectedFreq, setDetectedFreq] = useState<number | null>(null);
+  const [centsOff, setCentsOff] = useState<number | null>(null);
+  const [micActive, setMicActive] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const tanpuraNodesRef = useRef<OscillatorNode[]>([]);
+  const tanpuraGainRef = useRef<GainNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pitchBufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
+
+  // AI feedback state (kept for post-session summary)
+  const [pitchObservations, setPitchObservations] = useState('');
+  const [pitchLoading, setPitchLoading] = useState(false);
+  const [pitchFeedback, setPitchFeedback] = useState<string | null>(null);
+  const [pitchError, setPitchError] = useState<string | null>(null);
 
   const [duration, setDuration] = useState<number>(30);
   const [customDuration, setCustomDuration] = useState('');
@@ -347,6 +225,159 @@ export default function RiyazPage() {
 
   useEffect(() => { loadHistory(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const stopTanpura = useCallback(() => {
+    tanpuraNodesRef.current.forEach(n => { try { n.stop(); } catch { /* already stopped */ } });
+    tanpuraNodesRef.current = [];
+    if (tanpuraGainRef.current) { tanpuraGainRef.current.disconnect(); tanpuraGainRef.current = null; }
+  }, []);
+
+  const stopMic = useCallback(() => {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    micStreamRef.current?.getTracks().forEach(t => t.stop());
+    micStreamRef.current = null;
+    analyserRef.current = null;
+    setMicActive(false);
+    setDetectedFreq(null);
+    setCentsOff(null);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    stopTanpura();
+    stopMic();
+    audioCtxRef.current?.close().catch(() => {});
+  }, [stopTanpura, stopMic]);
+
+  function getOrCreateAudioCtx(): AudioContext {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioContext();
+    }
+    audioCtxRef.current.resume();
+    return audioCtxRef.current;
+  }
+
+  function startTanpura() {
+    const saFreq = PITCH_FREQS[selectedPitch] ?? 261.63;
+    const ctx = getOrCreateAudioCtx();
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = 0.08;
+    masterGain.connect(ctx.destination);
+    tanpuraGainRef.current = masterGain;
+
+    // Tanpura: Pa, Sa', Sa', Sa (each with slight detuning for warmth)
+    const strings = [
+      { freq: saFreq * 3/2, detune: 0 },
+      { freq: saFreq * 2,   detune: -3 },
+      { freq: saFreq * 2,   detune: 3 },
+      { freq: saFreq,       detune: 0 },
+    ];
+    const nodes: OscillatorNode[] = [];
+    strings.forEach(({ freq, detune }) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.detune.value = detune;
+      // Add a small harmonic for richness
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.value = freq * 2;
+      const g2 = ctx.createGain();
+      g2.gain.value = 0.15;
+      osc2.connect(g2);
+      g2.connect(masterGain);
+      osc2.start();
+      nodes.push(osc2);
+      osc.connect(masterGain);
+      osc.start();
+      nodes.push(osc);
+    });
+    tanpuraNodesRef.current = nodes;
+    setTanpuraOn(true);
+  }
+
+  async function startMic() {
+    setMicError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      micStreamRef.current = stream;
+      const ctx = getOrCreateAudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 4096; // larger buffer → better resolution for low vocal frequencies
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      pitchBufferRef.current = new Float32Array(analyser.fftSize);
+      setMicActive(true);
+
+      function tick() {
+        if (!analyserRef.current || !pitchBufferRef.current) return;
+        analyserRef.current.getFloatTimeDomainData(pitchBufferRef.current);
+        const freq = detectPitchFromBuffer(pitchBufferRef.current, ctx.sampleRate);
+        if (freq > 50 && freq < 2000) {
+          setDetectedFreq(Math.round(freq * 10) / 10);
+          const saFreq = PITCH_FREQS[selectedPitch] ?? 261.63;
+          const targetFreq = saFreq * SWARA_RATIOS[currentSwaraIdx].ratio;
+          // Check octaves up/down
+          let best = Infinity;
+          for (const mult of [0.5, 1, 2, 4]) {
+            const c = Math.abs(freqToCents(freq, targetFreq * mult));
+            if (c < Math.abs(best)) best = freqToCents(freq, targetFreq * mult);
+          }
+          setCentsOff(best);
+        } else {
+          setDetectedFreq(null);
+          setCentsOff(null);
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      }
+      tick();
+    } catch (e) {
+      setMicError('Microphone access denied. Please allow mic access in your browser.');
+    }
+  }
+
+  function toggleTanpura() {
+    if (tanpuraOn) {
+      stopTanpura();
+      setTanpuraOn(false);
+    } else {
+      startTanpura();
+    }
+  }
+
+  async function toggleMic() {
+    if (micActive) {
+      stopMic();
+    } else {
+      await startMic();
+    }
+  }
+
+  async function handlePitchCheck() {
+    setPitchLoading(true);
+    setPitchFeedback(null);
+    setPitchError(null);
+    try {
+      const res = await apiFetch('/api/riyaz/pitch-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pitch: selectedPitch,
+          swarasAttempted: 'S R G M P D N S',
+          observations: pitchObservations.trim() || undefined,
+          ragam: 'Maya Malava Gowla',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'AI feedback failed');
+      setPitchFeedback(json.feedback);
+    } catch (e: unknown) {
+      setPitchError(e instanceof Error ? e.message : 'Could not get feedback. Try again.');
+    } finally {
+      setPitchLoading(false);
+    }
+  }
+
   const effectiveDuration = useCustom
     ? parseInt(customDuration, 10) || 0
     : duration;
@@ -362,7 +393,7 @@ export default function RiyazPage() {
       const res = await apiFetch('/api/riyaz', {
         method: 'POST',
         body: JSON.stringify({
-          duration: effectiveDuration,
+          durationMinutes: effectiveDuration,
           notes: notes.trim() || undefined,
         }),
       });
@@ -397,9 +428,6 @@ export default function RiyazPage() {
           Log your personal practice session and build a daily streak.
         </p>
       </div>
-
-      {/* Live Swara Tuner */}
-      <SwaraTuner />
 
       {/* Success message */}
       {submitState === 'success' && (
@@ -463,6 +491,187 @@ export default function RiyazPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Tanpura + Live Pitch Tuner */}
+      <div className="card border-teal-200 bg-teal-50 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-heading font-semibold text-teal-900 text-sm">
+              🎵 Live Swara Pitch Tuner
+            </h2>
+            <p className="text-xs text-teal-700 mt-0.5">
+              Tanpura drone + real-time tuner for SRGMPDN in Maya Malava Gowla
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (showPitchCheck) { stopTanpura(); stopMic(); setTanpuraOn(false); }
+              setShowPitchCheck(v => !v);
+              setPitchFeedback(null);
+            }}
+            className="text-xs text-teal-700 underline hover:no-underline flex-shrink-0"
+          >
+            {showPitchCheck ? 'Hide' : 'Open'}
+          </button>
+        </div>
+
+        {showPitchCheck && (
+          <div className="space-y-4 pt-1 border-t border-teal-200">
+            {/* Sa Pitch selector */}
+            <div>
+              <p className="text-xs font-semibold text-teal-800 mb-2">1. Select your Sa (tonic pitch)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SA_PITCHES.map((p) => (
+                  <button key={p} type="button"
+                    onClick={() => { setSelectedPitch(p); stopTanpura(); setTanpuraOn(false); }}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                      selectedPitch === p ? 'bg-teal-700 text-white' : 'bg-white border border-teal-300 text-teal-700 hover:bg-teal-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-teal-600 mt-1">
+                Sa = {selectedPitch} ({Math.round(PITCH_FREQS[selectedPitch] ?? 261)}Hz) · Maya Malava Gowla: S R₂ G₃ M₁ P D₁ N₃
+              </p>
+            </div>
+
+            {/* Tanpura control */}
+            <div>
+              <p className="text-xs font-semibold text-teal-800 mb-2">2. Start the Tanpura drone for reference</p>
+              <button
+                type="button"
+                onClick={toggleTanpura}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                  tanpuraOn
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-white border-2 border-teal-400 text-teal-800'
+                }`}
+              >
+                {tanpuraOn ? '🔊 Tanpura Playing — Tap to Stop' : '🎶 Start Tanpura Drone'}
+              </button>
+              {tanpuraOn && (
+                <p className="text-[10px] text-teal-600 mt-1 text-center">
+                  Drone strings: Pa ({Math.round(PITCH_FREQS[selectedPitch] * 3/2)}Hz) · Sa' ({Math.round(PITCH_FREQS[selectedPitch] * 2)}Hz) · Sa ({Math.round(PITCH_FREQS[selectedPitch])}Hz)
+                </p>
+              )}
+            </div>
+
+            {/* Swara selector */}
+            <div>
+              <p className="text-xs font-semibold text-teal-800 mb-2">3. Select the swara you are singing</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {SWARA_RATIOS.map((s, i) => {
+                  const targetFreq = (PITCH_FREQS[selectedPitch] ?? 261.63) * s.ratio;
+                  return (
+                    <button key={s.name} type="button"
+                      onClick={() => { setCurrentSwaraIdx(i); setCentsOff(null); }}
+                      className={`py-2 rounded-lg text-center transition-colors ${
+                        currentSwaraIdx === i
+                          ? 'bg-teal-700 text-white'
+                          : 'bg-white border border-teal-300 text-teal-800 hover:bg-teal-100'
+                      }`}
+                    >
+                      <div className="text-sm font-bold">{s.symbol}</div>
+                      <div className="text-[9px] opacity-70">{Math.round(targetFreq)}Hz</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-teal-600 mt-1">
+                Now singing: <strong>{SWARA_RATIOS[currentSwaraIdx].name}</strong> ({Math.round((PITCH_FREQS[selectedPitch] ?? 261.63) * SWARA_RATIOS[currentSwaraIdx].ratio)} Hz)
+              </p>
+            </div>
+
+            {/* Live tuner */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-teal-800">4. Sing and watch the tuner</p>
+                <button type="button" onClick={toggleMic}
+                  className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                    micActive ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-teal-600 text-white'
+                  }`}
+                >
+                  {micActive ? '⏹ Stop Mic' : '🎤 Start Mic'}
+                </button>
+              </div>
+
+              {micError && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-2">{micError}</p>}
+
+              {/* Tuner display */}
+              <div className={`rounded-xl border-2 p-4 text-center transition-colors ${
+                !micActive ? 'border-gray-200 bg-gray-50' :
+                centsOff === null ? 'border-gray-300 bg-gray-50' :
+                Math.abs(centsOff) <= 10 ? 'border-green-400 bg-green-50' :
+                Math.abs(centsOff) <= 25 ? 'border-yellow-400 bg-yellow-50' :
+                'border-red-400 bg-red-50'
+              }`}>
+                {!micActive ? (
+                  <p className="text-gray-400 text-sm">Start mic to see tuner</p>
+                ) : detectedFreq === null ? (
+                  <div>
+                    <p className="text-gray-400 text-sm">Sing into your mic…</p>
+                    <div className="flex justify-center gap-1 mt-2">
+                      {[1,2,3,4,5].map(i => (
+                        <div key={i} className="w-1 bg-gray-200 rounded animate-pulse" style={{ height: `${8 + i * 4}px`, animationDelay: `${i * 100}ms` }} />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Detected: {detectedFreq} Hz</p>
+                    {/* Needle bar */}
+                    <div className="relative w-full h-6 bg-gray-200 rounded-full overflow-hidden mb-2">
+                      <div className="absolute top-0 left-1/2 w-0.5 h-full bg-gray-400 z-10" />
+                      <div
+                        className={`absolute top-0 w-3 h-full rounded-full transition-all duration-100 ${
+                          Math.abs(centsOff ?? 999) <= 10 ? 'bg-green-500' :
+                          Math.abs(centsOff ?? 999) <= 25 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}
+                        style={{ left: `calc(50% + ${Math.max(-48, Math.min(48, (centsOff ?? 0) * 0.4))}% - 6px)` }}
+                      />
+                    </div>
+                    <p className={`text-lg font-bold ${
+                      Math.abs(centsOff ?? 999) <= 10 ? 'text-green-700' :
+                      Math.abs(centsOff ?? 999) <= 25 ? 'text-yellow-700' : 'text-red-700'
+                    }`}>
+                      {centsOff === null ? '—' :
+                       Math.abs(centsOff) <= 10 ? '✓ In Tune' :
+                       centsOff > 0 ? `+${centsOff}¢ Sharp` : `${centsOff}¢ Flat`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* AI feedback after practice */}
+            <div className="border-t border-teal-200 pt-3 space-y-2">
+              <p className="text-xs font-semibold text-teal-800">Get AI coaching notes (optional)</p>
+              <textarea
+                className="input text-xs min-h-[56px]"
+                placeholder="e.g. My Ga feels flat, Ni is unstable…"
+                value={pitchObservations}
+                onChange={(e) => setPitchObservations(e.target.value)}
+                maxLength={300}
+              />
+              <button type="button" onClick={handlePitchCheck} disabled={pitchLoading}
+                className="btn-primary w-full text-sm"
+                style={{ background: '#0d7563' }}
+              >
+                {pitchLoading ? 'Getting feedback…' : '🤖 Get AI Coaching Notes'}
+              </button>
+              {pitchError && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{pitchError}</p>}
+              {pitchFeedback && (
+                <div className="bg-white rounded-xl border border-teal-200 px-4 py-4 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {pitchFeedback}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Log form */}
       <form onSubmit={handleSubmit} className="card space-y-5">
@@ -587,7 +796,7 @@ export default function RiyazPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-charcoal">
-                      {c.duration} min practice
+                      {c.durationMinutes ?? c.duration ?? 0} min practice
                     </p>
                     {c.notes && (
                       <p className="text-xs text-gray-500 mt-0.5 truncate">

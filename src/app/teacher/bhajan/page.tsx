@@ -74,8 +74,9 @@ export default function BhajanSessionPage() {
     apiFetch('/api/bhajan')
       .then((r) => r.json())
       .then((data) => {
-        const s: BhajanSession = Array.isArray(data) ? data[0] : data;
-        setSession(s ?? null);
+        const list = data.sessions ?? (Array.isArray(data) ? data : []);
+        const s: BhajanSession | null = list[0] ?? null;
+        setSession(s);
         if (s) {
           setYoutubeInput(s.youtubeLink ?? '');
           setAttendeeInput(s.attendeeCount != null ? String(s.attendeeCount) : '');
@@ -186,8 +187,39 @@ export default function BhajanSessionPage() {
       ) : !session ? (
         <div className="card flex flex-col items-center py-16 text-center">
           <span className="text-4xl mb-3">🙏</span>
-          <p className="text-gray-500 text-sm">No bhajan session found for today.</p>
-          <p className="text-xs text-gray-400 mt-1">Sessions are typically auto-created daily at the scheduled time.</p>
+          <p className="text-gray-500 text-sm">No bhajan session for today.</p>
+          <p className="text-xs text-gray-400 mt-1 mb-4">You can create one manually to go live.</p>
+          <button
+            className="btn-primary"
+            onClick={async () => {
+              setLoading(true);
+              try {
+                const today = new Date().toISOString().slice(0, 10);
+                const res = await apiFetch('/api/bhajan', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ date: today, status: 'scheduled' }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error ?? 'Failed');
+                // Reload
+                const r2 = await apiFetch('/api/bhajan');
+                const data2 = await r2.json();
+                const list2 = data2.sessions ?? [];
+                const s2 = list2[0] ?? null;
+                setSession(s2);
+                if (s2) {
+                  setYoutubeInput(s2.youtubeLink ?? s2.youtubeUrl ?? '');
+                }
+              } catch (e: unknown) {
+                setError(e instanceof Error ? e.message : 'Could not create session.');
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            🎵 Create Today's Session
+          </button>
         </div>
       ) : (
         <div className="space-y-4">

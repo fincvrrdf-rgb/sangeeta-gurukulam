@@ -34,21 +34,39 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: 'Missing required query params: from, to' }, { status: 400 });
     }
 
+    // Normalise date range: treat bare dates as IST day boundaries
+    const fromStr = from.length === 10 ? `${from}T00:00:00+05:30` : from;
+    const toStr = to.length === 10 ? `${to}T23:59:59+05:30` : to;
+
     const constraints: QueryConstraint[] = [
       { type: 'where', field: 'scheduledStartTime', op: '>=', value: from },
-      { type: 'where', field: 'scheduledStartTime', op: '<=', value: to },
+      { type: 'where', field: 'scheduledStartTime', op: '<=', value: toStr },
     ];
 
     if (slotId) {
       constraints.push({ type: 'where', field: 'slotId', op: '==', value: slotId });
     }
 
-    if (auth.role === 'teacher') {
-      constraints.push({ type: 'where', field: 'teacherId', op: '==', value: auth.uid });
-    }
-    // Students see all class instances (filtered by date range); super_admin sees all
+    let instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
 
-    const instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
+    if (auth.role === 'teacher') {
+      // Teachers only see their own classes
+      instances = instances.filter((i) => i.teacherId === auth.uid);
+    } else if (auth.role === 'student') {
+      // Students only see classes for their batch band
+      const studentProfiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, [
+        { type: 'where', field: 'userId', op: '==', value: auth.uid },
+      ]);
+      const studentProfile = studentProfiles[0];
+      if (studentProfile?.currentBatchBandId) {
+        instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
+      }
+      // Alias googleMeetLink as meetLink for client compatibility
+      instances = instances.map((i) => ({
+        ...i,
+        meetLink: i.googleMeetLink ?? undefined,
+      }));
+    }
 
     return Response.json({ success: true, instances });
   } catch (error) {
