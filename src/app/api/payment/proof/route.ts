@@ -32,10 +32,14 @@ export async function GET(request: NextRequest) {
         ? [{ type: 'where' as const, field: 'studentId', op: '==' as const, value: auth.uid }]
         : [];
 
-    const proofs = await queryDocs<PaymentProofUpload>(COLLECTIONS.PAYMENT_PROOF_UPLOADS, [
-      ...constraints,
-      { type: 'orderBy', field: 'uploadedAt', direction: 'desc' },
-    ]);
+    const proofs = await queryDocs<PaymentProofUpload>(COLLECTIONS.PAYMENT_PROOF_UPLOADS, constraints);
+
+    // Sort client-side to avoid composite index requirement
+    proofs.sort((a, b) =>
+      String((b as unknown as Record<string, unknown>).uploadedAt ?? '').localeCompare(
+        String((a as unknown as Record<string, unknown>).uploadedAt ?? '')
+      )
+    );
 
     return Response.json({ proofs });
   } catch (error) {

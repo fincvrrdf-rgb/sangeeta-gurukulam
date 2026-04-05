@@ -49,26 +49,30 @@ export async function POST(request: NextRequest) {
       ? 'Focus on North and South Indian Hindu festivals, ekadashis, and observances as per the Indian calendar. Include regional festivals like Pongal, Onam, Navratri, etc.'
       : 'Include major Hindu festivals and observances that are celebrated internationally by the diaspora community.';
 
-    const systemPrompt = `You are a Hindu devotional calendar expert with knowledge of Drik Panchang (drikpanchang.com).
-Generate a JSON array of devotional events for ${monthName} ${year}.
-${regionContext}
+    const systemPrompt = `You are a Hindu devotional calendar assistant. Your task is to provide accurate Hindu festival and observance dates for a specific month and year.
 
-Include: major festivals, ekadashis (Shukla & Krishna), vrats (Pradosh, Amavasya, Purnima), important pujas, and any special observances.
+CRITICAL INSTRUCTIONS:
+- You MUST search the web for the actual ${monthName} ${year} Hindu calendar dates. Do NOT rely on your training data — panchang dates change every year and training data is inaccurate for future years.
+- Search for "${monthName} ${year} Hindu calendar panchang" or "${monthName} ${year} Hindu festivals India drikpanchang" to get verified dates.
+- Only include events that fall within ${monthName} ${year}.
+- ${regionContext}
 
-Each event must have:
-- "name": event name (in English)
-- "date": ISO date string (YYYY-MM-DD)
+Include: major festivals, ekadashis (Shukla & Krishna paksha), pradosh vrats, amavasya, purnima, and important pujas.
+
+Return ONLY a valid JSON array. Each object must have:
+- "name": event name in English
+- "date": exact date in YYYY-MM-DD format (verified from web search)
 - "eventType": one of "festival", "vrat", "ekadashi", "puja", "other"
 - "description": 1-2 sentence description of significance
 
-IMPORTANT: Return ONLY a valid JSON array. No markdown, no explanation, just the array.
-Attribution: Event information referenced from Drik Panchang (drikpanchang.com).`;
+No markdown, no explanation — just the JSON array.`;
 
-    const userMessage = `Generate all Hindu devotional events for ${monthName} ${year} (region: ${region}).`;
+    const userMessage = `Search the web and provide all Hindu devotional events for ${monthName} ${year} (region: ${region}). Use live search results, not training data, to get the correct dates.`;
 
     const aiResponse = await callGroqSimple(systemPrompt, userMessage, {
-      temperature: 0.2,
+      temperature: 0.1,
       maxTokens: 4096,
+      model: 'compound-beta',
     });
 
     // Parse AI response
@@ -112,8 +116,10 @@ Attribution: Event information referenced from Drik Panchang (drikpanchang.com).
         eventType: event.eventType || 'other',
         description: event.description || '',
         region,
-        source: 'ai_drik_panchang',
-        attribution: 'Event information referenced from Drik Panchang (drikpanchang.com)',
+        source: 'ai_generated',
+        requiresVerification: true,
+        verificationNote: 'AI-generated date — please verify against drikpanchang.com before publishing.',
+        attribution: 'Dates are AI-generated drafts. Verify against Drik Panchang (drikpanchang.com).',
         createdBy: auth.uid,
         createdAt: nowISO(),
       });
@@ -137,7 +143,8 @@ Attribution: Event information referenced from Drik Panchang (drikpanchang.com).
       created,
       skipped,
       total: events.length,
-      attribution: 'Event information referenced from Drik Panchang (drikpanchang.com)',
+      warning: 'AI-generated dates may be inaccurate. Hindu festivals follow the lunisolar calendar and dates shift every year. Please verify ALL dates against drikpanchang.com before publishing.',
+      attribution: 'Dates are AI-generated drafts. Verify against Drik Panchang (drikpanchang.com).',
     });
   } catch (error) {
     return authErrorResponse(error);

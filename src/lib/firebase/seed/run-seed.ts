@@ -20,7 +20,6 @@ import {
   GANAMRUTHA_BODHINI_COPYRIGHT,
   INITIAL_GEETHAMS,
   INITIAL_SWARAJATHIS,
-  INITIAL_VARNAMS,
   BATCH_BAND_DEFINITIONS,
   DEFAULT_RUBRIC_DIMENSIONS,
   COLLECTIONS,
@@ -215,38 +214,7 @@ async function seed() {
     }
   }
 
-  // Varnams inside Lesson 7
-  const lesson7Id = lessonIds[7];
-  if (lesson7Id) {
-    for (const v of INITIAL_VARNAMS) {
-      const existing = await unitsRef
-        .where('lessonId', '==', lesson7Id)
-        .where('unitNumber', '==', v.unitNumber)
-        .get();
-
-      if (existing.empty) {
-        await unitsRef.add({
-          lessonId: lesson7Id,
-          bookId,
-          unitType: 'varnam',
-          unitName: v.unitName,
-          unitNumber: v.unitNumber,
-          description: '',
-          ragam: v.ragam ?? null,
-          taalam: v.taalam ?? null,
-          composer: null,
-          estimatedClassCount: v.estimatedClassCount,
-          lyricsId: null,
-          order: v.unitNumber,
-          isActive: true,
-          createdBy: 'seed_script',
-          createdAt: now,
-          updatedAt: now,
-        });
-        console.log(`  [+] Unit: ${v.unitName} — ${v.ragam} (inside Lesson 7)`);
-      }
-    }
-  }
+  // Varnams are in Book 2 — not seeded here.
 
   // 5. Batch Bands
   const bandsRef = db.collection(COLLECTIONS.BATCH_BANDS);

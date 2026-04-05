@@ -2,10 +2,7 @@
  * Riyaz Check-in — /student/riyaz
  *
  * Lets students log a personal practice (riyaz) session with a duration.
- * Shows a streak counter and recent check-in history.
- *
- * TODO: Requires /api/riyaz route (GET + POST) backed by a
- *       `riyaz_checkins` Firestore collection (fields: uid, duration, notes, createdAt).
+ * Shows a streak counter, recent check-in history, and a live swara pitch tuner.
  */
 
 'use client';

@@ -9,7 +9,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs, createDoc, nowISO } from '@/lib/firebase/firestore';
-import { COLLECTIONS, GANAMRUTHA_BODHINI_LESSONS, GANAMRUTHA_BODHINI_COPYRIGHT, INITIAL_GEETHAMS, INITIAL_SWARAJATHIS, INITIAL_VARNAMS } from '@/domain/constants';
+import { COLLECTIONS, GANAMRUTHA_BODHINI_LESSONS, GANAMRUTHA_BODHINI_COPYRIGHT, INITIAL_GEETHAMS, INITIAL_SWARAJATHIS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 
 export async function POST(request: NextRequest) {
@@ -169,33 +169,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Lesson 7: Varnams
-    const lesson7Id = lessonIds[7];
-    if (lesson7Id) {
-      for (const v of INITIAL_VARNAMS) {
-        const key = `${lesson7Id}|${v.unitNumber}`;
-        if (existingUnitKeys.has(key)) continue;
-        await createDoc(COLLECTIONS.TEACHING_UNITS, {
-          lessonId: lesson7Id,
-          bookId,
-          unitType: 'varnam',
-          unitName: v.unitName,
-          unitNumber: v.unitNumber,
-          description: '',
-          ragam: v.ragam,
-          taalam: v.taalam,
-          composer: null,
-          estimatedClassCount: v.estimatedClassCount,
-          lyricsId: null,
-          order: v.unitNumber,
-          isActive: true,
-          createdBy: auth.uid,
-          createdAt: nowISO(),
-          updatedAt: nowISO(),
-        });
-        unitsCreated++;
-      }
-    }
+    // Varnams are in Book 2 — not seeded here.
 
     const { ipAddress, userAgent } = extractRequestMeta(request);
     await writeAuditLog({

@@ -14,7 +14,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
   getDocs,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
@@ -83,13 +82,14 @@ export default function WeeklyReportsPage() {
           collection(db, COLLECTIONS.WEEKLY_REPORTS),
           where('studentId', '==', user!.uid),
           where('status', '==', 'published'),
-          orderBy('weekOf', 'desc'),
         );
         const snap = await getDocs(q);
         const items: ReportSummary[] = snap.docs.map((doc) => ({
           id: doc.id,
           ...(doc.data() as Omit<ReportSummary, 'id'>),
         }));
+        // Sort client-side to avoid composite index requirement
+        items.sort((a, b) => (b.weekOf ?? '').localeCompare(a.weekOf ?? ''));
         setReports(items);
       } catch (err: unknown) {
         setError(

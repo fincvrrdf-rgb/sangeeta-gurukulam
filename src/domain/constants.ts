@@ -135,7 +135,7 @@ export const GANAMRUTHA_BODHINI_LESSONS = [
   { lessonNumber: 4, lessonName: 'Alankarams (Sapta Tala)', isContainer: false, batchBandCode: 'B' as BatchBandCode, ragam: 'Maya Malava Gowla', taalam: 'Sapta Thalams' },
   { lessonNumber: 5, lessonName: 'Geethams', isContainer: true, batchBandCode: 'C' as BatchBandCode, ragam: null, taalam: null },
   { lessonNumber: 6, lessonName: 'Swarajathis', isContainer: true, batchBandCode: 'D' as BatchBandCode, ragam: null, taalam: null },
-  { lessonNumber: 7, lessonName: 'Varnams', isContainer: true, batchBandCode: 'D' as BatchBandCode, ragam: null, taalam: null },
+  // Lesson 7 (Varnams) is from Book 2 — not seeded here. Add manually when Book 2 is referenced.
 ];
 
 /**
@@ -168,17 +168,7 @@ export const INITIAL_SWARAJATHIS = [
   { unitNumber: 2, unitName: 'Swarajathi 2 — Pahi Sree Kamakshi', ragam: 'Todi', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 10 },
 ];
 
-/**
- * Varnams from Ganamrutha Bodhini — Lesson 7.
- * Source: Ganamrutha Bodhini by A.S. Panchapakesa Iyer.
- */
-export const INITIAL_VARNAMS = [
-  { unitNumber: 1, unitName: 'Varnam 1 — Sami Ninne (Tana Varnam)', ragam: 'Kalyani', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 12 },
-  { unitNumber: 2, unitName: 'Varnam 2 — Chalamela (Tana Varnam)', ragam: 'Khamas', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 12 },
-  { unitNumber: 3, unitName: 'Varnam 3 — Ninnukori Varnam (Tana Varnam)', ragam: 'Mohanam', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 12 },
-  { unitNumber: 4, unitName: 'Varnam 4 — Viriboni (Ata Varnam)', ragam: 'Bhairavi', taalam: 'Misra Jathi Jhampa Thalam (Ata)', estimatedClassCount: 16 },
-  { unitNumber: 5, unitName: 'Varnam 5 — Inta Saukhyamu (Tana Varnam)', ragam: 'Bilahari', taalam: 'Chathurasra Jathi Triputa Thalam (Adi)', estimatedClassCount: 12 },
-];
+// INITIAL_VARNAMS removed — Varnams are in Book 2 (not shared). Add when Book 2 is referenced.
 
 // =============================================================================
 // Batch Band Definitions

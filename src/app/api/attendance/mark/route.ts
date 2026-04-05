@@ -24,7 +24,45 @@ import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { createNotification } from '@/services/notifications/create';
 import type { ClassInstance, AppSettings, LongAbsenceRecord, AbsenceRecord } from '@/domain/types';
 import type { AttendanceStatus } from '@/domain/enums';
+import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
+
+/**
+ * GET /api/attendance/mark — Student's own attendance history
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await requireAuth(request, ['student', 'teacher', 'super_admin']);
+
+    const studentId = auth.role === 'student'
+      ? auth.uid
+      : request.nextUrl.searchParams.get('studentId') ?? auth.uid;
+
+    const constraints: QueryConstraint[] = [
+      { type: 'where', field: 'studentId', op: '==', value: studentId },
+    ];
+
+    const records = await queryDocs<Record<string, unknown>>(COLLECTIONS.ATTENDANCE_RECORDS, constraints);
+
+    // Sort by markedAt descending client-side to avoid composite index
+    records.sort((a, b) =>
+      String(b.markedAt ?? '').localeCompare(String(a.markedAt ?? ''))
+    );
+
+    // Map to the shape the frontend expects
+    const attendanceRecords = records.slice(0, 50).map((r) => ({
+      id: r.id,
+      date: r.markedAt ?? r.createdAt ?? '',
+      className: `Class ${r.classInstanceId ?? ''}`.slice(0, 30),
+      status: r.isViolation ? 'violation' : (r.status ?? 'present'),
+      notes: r.notes ?? null,
+    }));
+
+    return Response.json({ records: attendanceRecords });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
 
 const MarkAttendanceSchema = z.object({
   studentId: z.string().min(1),

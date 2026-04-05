@@ -25,7 +25,7 @@ const COLLECTION_MAP: Record<string, string> = {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request, ['teacher', 'super_admin']);
+    await requireAuth(request, ['student', 'teacher', 'super_admin']);
 
     const [books, lessons, units] = await Promise.all([
       queryDocs(COLLECTIONS.SYLLABUS_BOOKS, []),
