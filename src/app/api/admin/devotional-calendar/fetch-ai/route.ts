@@ -116,8 +116,10 @@ No markdown, no explanation — just the JSON array.`;
         eventType: event.eventType || 'other',
         description: event.description || '',
         region,
-        source: 'ai_drik_panchang',
-        attribution: 'Event information referenced from Drik Panchang (drikpanchang.com)',
+        source: 'ai_generated',
+        requiresVerification: true,
+        verificationNote: 'AI-generated date — please verify against drikpanchang.com before publishing.',
+        attribution: 'Dates are AI-generated drafts. Verify against Drik Panchang (drikpanchang.com).',
         createdBy: auth.uid,
         createdAt: nowISO(),
       });
@@ -141,7 +143,8 @@ No markdown, no explanation — just the JSON array.`;
       created,
       skipped,
       total: events.length,
-      attribution: 'Event information referenced from Drik Panchang (drikpanchang.com)',
+      warning: 'AI-generated dates may be inaccurate. Hindu festivals follow the lunisolar calendar and dates shift every year. Please verify ALL dates against drikpanchang.com before publishing.',
+      attribution: 'Dates are AI-generated drafts. Verify against Drik Panchang (drikpanchang.com).',
     });
   } catch (error) {
     return authErrorResponse(error);

@@ -13,7 +13,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
   getDocs,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
@@ -167,13 +166,14 @@ export default function ResourcesPage() {
         const q = query(
           collection(db, COLLECTIONS.RESOURCES),
           where('visibility', 'in', ['all_students', 'public']),
-          orderBy('createdAt', 'desc'),
         );
         const snap = await getDocs(q);
         const items: Resource[] = snap.docs.map((doc) => ({
           id: doc.id,
           ...(doc.data() as Omit<Resource, 'id'>),
         }));
+        // Sort client-side to avoid composite index requirement
+        items.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
         setResources(items);
       } catch (err: unknown) {
         setError(

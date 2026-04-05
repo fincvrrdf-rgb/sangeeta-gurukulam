@@ -32,6 +32,34 @@ function SkeletonItem() {
   );
 }
 
+const STOTRAM_LINKS = [
+  {
+    title: 'Ganesha Pancharatnam',
+    url: 'https://www.greenmsg.org/stotram/ganesha_pancharatnam.php',
+    deity: 'Ganesha',
+  },
+  {
+    title: 'Shiva Panchakshara Stotram',
+    url: 'https://www.greenmsg.org/stotram/shiva_panchakshara_stotram.php',
+    deity: 'Shiva',
+  },
+  {
+    title: 'Suryashtakam',
+    url: 'https://www.greenmsg.org/stotram/suryashtakam.php',
+    deity: 'Surya',
+  },
+  {
+    title: 'Mahishasura Mardini Stotram',
+    url: 'https://www.greenmsg.org/stotram/mahishasura_mardini_stotram.php',
+    deity: 'Devi',
+  },
+  {
+    title: 'Durga Saptashloki',
+    url: 'https://www.greenmsg.org/stotram/durga_saptashloki.php',
+    deity: 'Durga',
+  },
+];
+
 export default function LyricsListPage() {
   const { user, apiFetch } = useAuthContext();
   const [lyrics, setLyrics] = useState<LyricsItem[]>([]);
@@ -98,6 +126,42 @@ export default function LyricsListPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {/* Stotrams & Bhajans — direct links */}
+      {!search && (
+        <section>
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="section-title">Stotrams &amp; Bhajans</h2>
+            <span className="badge badge-neutral">{STOTRAM_LINKS.length}</span>
+          </div>
+          <div className="card p-0 overflow-hidden">
+            <ul className="divide-y divide-gray-100">
+              {STOTRAM_LINKS.map((item) => (
+                <li key={item.url}>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 px-4 py-3.5
+                               hover:bg-saffron-50 transition-colors group"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-charcoal group-hover:text-saffron-800 truncate">
+                        {item.title}
+                      </p>
+                      <span className="text-xs text-gray-400">{item.deity}</span>
+                    </div>
+                    <span className="text-xs text-saffron-600 flex-shrink-0">greenmsg.org &#x2197;</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            Lyrics sourced from <a href="https://www.greenmsg.org/stotram/" target="_blank" rel="noopener noreferrer" className="underline hover:text-saffron-600">greenmsg.org</a>
+          </p>
+        </section>
+      )}
 
       {/* Error */}
       {error && (

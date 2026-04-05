@@ -24,12 +24,13 @@ const CreateSlotSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const auth = await requireAuth(request, ['student', 'teacher', 'super_admin']);
 
     const constraints =
-      auth.role === 'super_admin'
-        ? []
-        : [{ type: 'where' as const, field: 'teacherId', op: '==' as const, value: auth.uid }];
+      auth.role === 'teacher'
+        ? [{ type: 'where' as const, field: 'teacherId', op: '==' as const, value: auth.uid }]
+        : [];
+    // Students and super_admin see all slots
 
     const slots = await queryDocs<ClassSlot>(COLLECTIONS.CLASS_SLOTS, constraints);
 

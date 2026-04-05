@@ -23,7 +23,7 @@ const CreateInstanceSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const auth = await requireAuth(request, ['student', 'teacher', 'super_admin']);
 
     const { searchParams } = new URL(request.url);
     const from = searchParams.get('from');
@@ -43,9 +43,10 @@ export async function GET(request: NextRequest) {
       constraints.push({ type: 'where', field: 'slotId', op: '==', value: slotId });
     }
 
-    if (auth.role !== 'super_admin') {
+    if (auth.role === 'teacher') {
       constraints.push({ type: 'where', field: 'teacherId', op: '==', value: auth.uid });
     }
+    // Students see all class instances (filtered by date range); super_admin sees all
 
     const instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
 

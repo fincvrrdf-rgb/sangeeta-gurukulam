@@ -2,15 +2,12 @@
  * Riyaz Check-in — /student/riyaz
  *
  * Lets students log a personal practice (riyaz) session with a duration.
- * Shows a streak counter and recent check-in history.
- *
- * TODO: Requires /api/riyaz route (GET + POST) backed by a
- *       `riyaz_checkins` Firestore collection (fields: uid, duration, notes, createdAt).
+ * Shows a streak counter, recent check-in history, and a live swara pitch tuner.
  */
 
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useRef, useCallback, type FormEvent } from 'react';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface RiyazCheckin {
@@ -64,6 +61,246 @@ function StreakFlame({ count }: { count: number }) {
       {count > 7 && (
         <span className="text-sm font-bold text-saffron-700 ml-1">+{count - 7}</span>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// Swara Pitch Tuner
+// ============================================================
+
+/**
+ * Maya Malava Gowla ratios — Ri1 = 16/15, Ga3 = 5/4, Ma1 = 4/3,
+ * Pa = 3/2, Dha1 = 8/5, Ni3 = 15/8, Sa(upper) = 2/1.
+ * These ratios are multiplied by the user's chosen base Sa frequency.
+ */
+const SWARA_RATIOS: [string, number][] = [
+  ['Sa',  1],
+  ['Ri',  16/15],
+  ['Ga',  5/4],
+  ['Ma',  4/3],
+  ['Pa',  3/2],
+  ['Dha', 8/5],
+  ['Ni',  15/8],
+  ['Sa\u0307', 2],  // upper Sa
+];
+
+/** Base Sa presets — male voice ~130 Hz (C3), female voice ~260 Hz (C4) */
+const VOICE_PRESETS: { label: string; freq: number }[] = [
+  { label: 'Male Low (C3 — 130 Hz)', freq: 130.81 },
+  { label: 'Male Mid (D3 — 147 Hz)', freq: 146.83 },
+  { label: 'Female Low (C4 — 261 Hz)', freq: 261.63 },
+  { label: 'Female Mid (D4 — 294 Hz)', freq: 293.66 },
+];
+
+/** YIN-like pitch detection from audio buffer */
+function detectPitch(buffer: Float32Array, sampleRate: number): number {
+  const W = Math.floor(buffer.length / 2);
+  // RMS silence gate
+  let rms = 0;
+  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / buffer.length);
+  if (rms < 0.01) return -1;
+
+  // YIN cumulative mean normalized difference
+  const d = new Float32Array(W);
+  d[0] = 1;
+  let runSum = 0;
+  for (let tau = 1; tau < W; tau++) {
+    let sum = 0;
+    for (let i = 0; i < W; i++) {
+      const delta = buffer[i] - buffer[i + tau];
+      sum += delta * delta;
+    }
+    runSum += sum;
+    d[tau] = runSum === 0 ? 1 : (sum * tau) / runSum;
+  }
+
+  // Find first dip below threshold
+  const threshold = 0.15;
+  const minTau = Math.floor(sampleRate / 1200); // max 1200 Hz
+  const maxTau = Math.floor(sampleRate / 60);    // min 60 Hz
+  let bestTau = -1;
+  for (let tau = minTau; tau < Math.min(maxTau, W); tau++) {
+    if (d[tau] < threshold) {
+      while (tau + 1 < W && d[tau + 1] < d[tau]) tau++;
+      bestTau = tau;
+      break;
+    }
+  }
+  if (bestTau < 1) return -1;
+
+  // Parabolic interpolation
+  if (bestTau > 0 && bestTau < W - 1) {
+    const s0 = d[bestTau - 1], s1 = d[bestTau], s2 = d[bestTau + 1];
+    const denom = 2 * (2 * s1 - s2 - s0);
+    if (denom !== 0) bestTau += (s2 - s0) / denom;
+  }
+
+  return sampleRate / bestTau;
+}
+
+/** Given a frequency and base Sa, return nearest swara & cents offset */
+function freqToSwara(freq: number, baseSa: number): { swara: string; cents: number } | null {
+  if (freq <= 0) return null;
+
+  let bestSwara = '';
+  let bestCents = Infinity;
+
+  // Check current octave and one above/below
+  for (const octMul of [0.5, 1, 2]) {
+    for (const [name, ratio] of SWARA_RATIOS) {
+      const target = baseSa * ratio * octMul;
+      const cents = 1200 * Math.log2(freq / target);
+      if (Math.abs(cents) < Math.abs(bestCents)) {
+        bestCents = cents;
+        bestSwara = octMul < 1 ? name.toLowerCase() : octMul > 1 && !name.includes('\u0307') ? name + '\u0307' : name;
+      }
+    }
+  }
+
+  return Math.abs(bestCents) < 100 ? { swara: bestSwara, cents: Math.round(bestCents) } : null;
+}
+
+function SwaraTuner() {
+  const [baseSa, setBaseSa] = useState(261.63); // default female C4
+  const [listening, setListening] = useState(false);
+  const [detectedFreq, setDetectedFreq] = useState(-1);
+  const [detectedSwara, setDetectedSwara] = useState<{ swara: string; cents: number } | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const rafRef = useRef<number>(0);
+
+  const tick = useCallback(() => {
+    if (!analyserRef.current || !audioCtxRef.current) return;
+    const buf = new Float32Array(analyserRef.current.fftSize);
+    analyserRef.current.getFloatTimeDomainData(buf);
+    const freq = detectPitch(buf, audioCtxRef.current.sampleRate);
+    setDetectedFreq(freq > 0 ? Math.round(freq * 10) / 10 : -1);
+    setDetectedSwara(freq > 0 ? freqToSwara(freq, baseSa) : null);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [baseSa]);
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 4096;
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+      sourceRef.current = source;
+      setListening(true);
+      rafRef.current = requestAnimationFrame(tick);
+    } catch {
+      // microphone permission denied
+    }
+  }, [tick]);
+
+  const stop = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    sourceRef.current?.disconnect();
+    audioCtxRef.current?.close();
+    audioCtxRef.current = null;
+    analyserRef.current = null;
+    sourceRef.current = null;
+    setListening(false);
+    setDetectedFreq(-1);
+    setDetectedSwara(null);
+  }, []);
+
+  useEffect(() => {
+    return () => { cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  // When baseSa changes and already listening, update the animation loop
+  useEffect(() => {
+    if (listening) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+  }, [baseSa, listening, tick]);
+
+  const centsColor = detectedSwara
+    ? Math.abs(detectedSwara.cents) <= 15 ? 'text-green-600'
+    : Math.abs(detectedSwara.cents) <= 40 ? 'text-yellow-600'
+    : 'text-red-500'
+    : 'text-gray-400';
+
+  return (
+    <div className="card space-y-4">
+      <h2 className="section-title">Live Swara Tuner</h2>
+      <p className="text-xs text-gray-500">
+        Select your voice range, then sing to see which swara you are hitting.
+      </p>
+
+      {/* Voice preset selector */}
+      <div>
+        <label className="block text-sm font-medium text-charcoal mb-1.5">
+          Voice Range (base Sa)
+        </label>
+        <select
+          className="input"
+          value={baseSa}
+          onChange={(e) => setBaseSa(Number(e.target.value))}
+        >
+          {VOICE_PRESETS.map((p) => (
+            <option key={p.freq} value={p.freq}>{p.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-400 mt-1">
+          Sa = {baseSa.toFixed(1)} Hz. Female voices typically sit an octave above male voices for the same note.
+        </p>
+      </div>
+
+      {/* Swara reference table */}
+      <div className="flex flex-wrap gap-2">
+        {SWARA_RATIOS.map(([name, ratio]) => (
+          <span key={name} className={`px-2 py-1 rounded text-xs font-mono border ${
+            detectedSwara?.swara === name ? 'bg-saffron-100 border-saffron-400 text-saffron-800 font-bold' : 'bg-gray-50 border-gray-200 text-gray-600'
+          }`}>
+            {name} {Math.round(baseSa * ratio)} Hz
+          </span>
+        ))}
+      </div>
+
+      {/* Pitch display */}
+      <div className="text-center py-4 space-y-2">
+        {listening ? (
+          <>
+            <p className="text-5xl font-bold text-charcoal">
+              {detectedSwara ? detectedSwara.swara : (detectedFreq > 0 ? '...' : '---')}
+            </p>
+            {detectedFreq > 0 && (
+              <p className="text-sm text-gray-500">
+                {detectedFreq} Hz
+                {detectedSwara && (
+                  <span className={`ml-2 font-semibold ${centsColor}`}>
+                    {detectedSwara.cents > 0 ? '+' : ''}{detectedSwara.cents} cents
+                  </span>
+                )}
+              </p>
+            )}
+            {!detectedSwara && detectedFreq <= 0 && (
+              <p className="text-sm text-gray-400">Listening... sing or hum into your mic</p>
+            )}
+          </>
+        ) : (
+          <p className="text-gray-400 text-sm">Tap Start to begin</p>
+        )}
+      </div>
+
+      {/* Start/Stop button */}
+      <button
+        type="button"
+        onClick={listening ? stop : start}
+        className={listening ? 'btn-danger w-full' : 'btn-primary w-full'}
+      >
+        {listening ? 'Stop Tuner' : 'Start Tuner'}
+      </button>
     </div>
   );
 }
@@ -160,6 +397,9 @@ export default function RiyazPage() {
           Log your personal practice session and build a daily streak.
         </p>
       </div>
+
+      {/* Live Swara Tuner */}
+      <SwaraTuner />
 
       {/* Success message */}
       {submitState === 'success' && (
