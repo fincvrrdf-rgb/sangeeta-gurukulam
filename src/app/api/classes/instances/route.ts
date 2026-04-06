@@ -6,7 +6,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { requireAuth, authErrorResponse, AuthError } from '@/lib/auth/middleware';
+import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { COLLECTIONS } from '@/domain/constants';
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const toStr = to.length === 10 ? `${to}T23:59:59+05:30` : to;
 
     const constraints: QueryConstraint[] = [
-      { type: 'where', field: 'scheduledStartTime', op: '>=', value: from },
+      { type: 'where', field: 'scheduledStartTime', op: '>=', value: fromStr },
       { type: 'where', field: 'scheduledStartTime', op: '<=', value: toStr },
     ];
 
@@ -62,9 +62,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Alias googleMeetLink as meetLink for all clients
+    // Resolve batchBandId → batchBand code ('A'/'B'/'C'/'D') for display
+    const uniqueBatchIds = [...new Set(instances.map((i) => i.batchBandId).filter(Boolean))];
+    const batchCodeMap: Record<string, string> = {};
+    for (const bandId of uniqueBatchIds) {
+      const band = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, bandId);
+      if (band) batchCodeMap[bandId] = band.code as string;
+    }
+
+    // Alias googleMeetLink as meetLink and attach batchBand code for all clients
     instances = instances.map((i) => ({
       ...i,
+      batchBand: batchCodeMap[i.batchBandId] ?? (i as unknown as Record<string, unknown>).batchBand ?? i.batchBandId,
       meetLink: i.googleMeetLink ?? undefined,
     }));
 
