@@ -225,7 +225,7 @@ export default function OnboardStudentPage() {
             </div>
           )}
           <p className="text-[10px] text-gray-400 mt-1">
-            Mon/Wed → Batch A (morning) / B (evening) · Tue/Fri → Batch C (morning) / D (evening)
+            Mon/Wed → Batch A (morning) / B (evening) · Tue/Thu → Batch C (morning) / D (evening)
           </p>
         </div>
 

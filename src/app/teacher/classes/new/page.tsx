@@ -4,7 +4,7 @@
  * Teacher creates a recurring class slot with batch, day, time, and type.
  * Pre-fills with the standard schedule:
  *   Mon/Wed → Batch A (morning) / Batch B (evening)
- *   Tue/Fri → Batch C (morning) / Batch D (evening)
+ *   Tue/Thu → Batch C (morning) / Batch D (evening)
  *   Saturday → Testing day
  */
 
@@ -29,10 +29,10 @@ const SCHEDULE_PRESETS = [
   { label: 'Mon/Wed — Batch B Evening', dayOfWeek: 1, start: '16:30', end: '17:30', batchCode: 'B', slotType: 'regular' },
   { label: 'Mon/Wed — Batch A Morning (Wed)', dayOfWeek: 3, start: '05:30', end: '06:30', batchCode: 'A', slotType: 'regular' },
   { label: 'Mon/Wed — Batch B Evening (Wed)', dayOfWeek: 3, start: '16:30', end: '17:30', batchCode: 'B', slotType: 'regular' },
-  { label: 'Tue/Fri — Batch C Morning', dayOfWeek: 2, start: '05:30', end: '06:30', batchCode: 'C', slotType: 'regular' },
-  { label: 'Tue/Fri — Batch D Evening', dayOfWeek: 2, start: '16:30', end: '17:30', batchCode: 'D', slotType: 'regular' },
-  { label: 'Tue/Fri — Batch C Morning (Fri)', dayOfWeek: 5, start: '05:30', end: '06:30', batchCode: 'C', slotType: 'regular' },
-  { label: 'Tue/Fri — Batch D Evening (Fri)', dayOfWeek: 5, start: '16:30', end: '17:30', batchCode: 'D', slotType: 'regular' },
+  { label: 'Tue/Thu — Batch C Morning (Tue)', dayOfWeek: 2, start: '05:30', end: '06:30', batchCode: 'C', slotType: 'regular' },
+  { label: 'Tue/Thu — Batch D Evening (Tue)', dayOfWeek: 2, start: '16:30', end: '17:30', batchCode: 'D', slotType: 'regular' },
+  { label: 'Tue/Thu — Batch C Morning (Thu)', dayOfWeek: 4, start: '05:30', end: '06:30', batchCode: 'C', slotType: 'regular' },
+  { label: 'Tue/Thu — Batch D Evening (Thu)', dayOfWeek: 4, start: '16:30', end: '17:30', batchCode: 'D', slotType: 'regular' },
   { label: 'Saturday — Testing Day', dayOfWeek: 6, start: '09:00', end: '10:00', batchCode: null, slotType: 'testing' },
 ];
 
@@ -124,7 +124,7 @@ export default function CreateSlotPage() {
       <div className="card bg-saffron-50 border-saffron-200 text-xs space-y-1">
         <p className="font-semibold text-saffron-900 mb-2">Standard Schedule (IST)</p>
         <p>📅 <strong>Mon, Wed</strong> — Batch A: 5:30–6:30 AM · Batch B: 4:30–5:30 PM</p>
-        <p>📅 <strong>Tue, Fri</strong> — Batch C: 5:30–6:30 AM · Batch D: 4:30–5:30 PM</p>
+        <p>📅 <strong>Tue, Thu</strong> — Batch C: 5:30–6:30 AM · Batch D: 4:30–5:30 PM</p>
         <p>📅 <strong>Saturday</strong> — Testing / Bhajan (open to all)</p>
       </div>
 

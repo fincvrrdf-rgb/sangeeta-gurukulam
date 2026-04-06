@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
       const STANDARD_BATCHES = [
         { code: 'A', name: 'Batch A — Mon/Wed Morning', description: 'Monday & Wednesday 5:30–6:30 AM IST' },
         { code: 'B', name: 'Batch B — Mon/Wed Evening', description: 'Monday & Wednesday 4:30–5:30 PM IST' },
-        { code: 'C', name: 'Batch C — Tue/Fri Morning', description: 'Tuesday & Friday 5:30–6:30 AM IST' },
-        { code: 'D', name: 'Batch D — Tue/Fri Evening', description: 'Tuesday & Friday 4:30–5:30 PM IST' },
+        { code: 'C', name: 'Batch C — Tue/Thu Morning', description: 'Tuesday & Thursday 5:30–6:30 AM IST' },
+        { code: 'D', name: 'Batch D — Tue/Thu Evening', description: 'Tuesday & Thursday 4:30–5:30 PM IST' },
       ];
       let created = 0;
       for (const b of STANDARD_BATCHES) {

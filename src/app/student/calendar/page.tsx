@@ -27,16 +27,16 @@ interface DevotionalEvent {
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/** Default batch schedule — classes Mon-Wed, Fri. Bhajan daily at 5:30 PM IST. */
+/** Default batch schedule — A&B on Mon/Wed, C&D on Tue/Thu. Bhajan daily at 5:30 PM IST. */
 const BATCH_SCHEDULE = [
-  { batch: 'Batch A', time: '5:00 AM – 5:45 AM IST', days: [1, 2, 3, 5] },
-  { batch: 'Batch B', time: '5:45 AM – 6:30 AM IST', days: [1, 2, 3, 5] },
-  { batch: 'Batch C', time: '5:00 AM – 5:45 AM IST', days: [1, 2, 3, 5] },
-  { batch: 'Batch D', time: '5:45 AM – 6:30 AM IST', days: [1, 2, 3, 5] },
+  { batch: 'Batch A', time: '5:30 AM – 6:30 AM IST', days: [1, 3] },  // Mon, Wed
+  { batch: 'Batch B', time: '4:30 PM – 5:30 PM IST', days: [1, 3] },  // Mon, Wed
+  { batch: 'Batch C', time: '5:30 AM – 6:30 AM IST', days: [2, 4] },  // Tue, Thu
+  { batch: 'Batch D', time: '4:30 PM – 5:30 PM IST', days: [2, 4] },  // Tue, Thu
 ];
 const BHAJAN_TIME = '5:30 PM IST';
 const BHAJAN_LABEL = 'Daily Bhajan Session';
-const CLASS_DAYS = new Set([1, 2, 3, 5]); // Mon, Tue, Wed, Fri
+const CLASS_DAYS = new Set([1, 2, 3, 4]); // Mon, Tue, Wed, Thu
 
 function getWeekDates(offset = 0) {
   const today = new Date();

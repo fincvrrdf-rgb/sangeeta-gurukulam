@@ -5,7 +5,7 @@
  *
  * Schedule:
  *   Mon/Wed — Batch A (morning 5:30–6:30) / Batch B (evening 4:30–5:30)
- *   Tue/Fri — Batch C (morning 5:30–6:30) / Batch D (evening 4:30–5:30)
+ *   Tue/Thu — Batch C (morning 5:30–6:30) / Batch D (evening 4:30–5:30)
  *   Saturday — Testing / Bhajan (all batches)
  */
 
@@ -29,7 +29,7 @@ const SCHEDULE_INFO: Record<string, string> = {
   '1': 'Monday — Batch A (5:30 AM) · Batch B (4:30 PM)',
   '2': 'Tuesday — Batch C (5:30 AM) · Batch D (4:30 PM)',
   '3': 'Wednesday — Batch A (5:30 AM) · Batch B (4:30 PM)',
-  '5': 'Friday — Batch C (5:30 AM) · Batch D (4:30 PM)',
+  '4': 'Thursday — Batch C (5:30 AM) · Batch D (4:30 PM)',
   '6': 'Saturday — Testing / All Batches',
 };
 
@@ -142,7 +142,7 @@ export default function JoinClassPage() {
           <p className="text-gray-400 text-sm mt-1">
             {scheduleNote
               ? `Today is ${scheduleNote}. Check with your teacher if you expected a class.`
-              : 'No classes today. Regular schedule: Mon/Wed (Batch A&B) · Tue/Fri (Batch C&D).'}
+              : 'No classes today. Regular schedule: Mon/Wed (Batch A&B) · Tue/Thu (Batch C&D).'}
           </p>
         </div>
       )}
