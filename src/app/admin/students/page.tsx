@@ -83,6 +83,8 @@ export default function StudentsPage() {
   const [waiving, setWaiving] = useState(false);
   const [waiverSuccess, setWaiverSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Filters
   const [filterBand, setFilterBand] = useState('');
@@ -143,6 +145,39 @@ export default function StudentsPage() {
       alert(e instanceof Error ? e.message : 'Could not waive violation.');
     } finally {
       setWaiving(false);
+    }
+  }
+
+  async function handleToggleActive(studentId: string, makeActive: boolean) {
+    setActioningId(studentId);
+    try {
+      const res = await apiFetch(`/api/admin/students/${studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: makeActive }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      setStudents((prev) =>
+        prev.map((s) => s.userId === studentId ? { ...s, isActive: makeActive } : s)
+      );
+    } catch {
+      alert('Could not update student status.');
+    } finally {
+      setActioningId(null);
+    }
+  }
+
+  async function handleDelete(studentId: string) {
+    setActioningId(studentId);
+    setConfirmDelete(null);
+    try {
+      const res = await apiFetch(`/api/admin/students/${studentId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+      setStudents((prev) => prev.filter((s) => s.userId !== studentId));
+    } catch {
+      alert('Could not delete student.');
+    } finally {
+      setActioningId(null);
     }
   }
 
@@ -277,9 +312,35 @@ export default function StudentsPage() {
                   <span className={`badge ${paymentBadgeClass(s.isPaymentCompulsoryThisCycle ? 'overdue' : s.paymentStatus)}`}>
                     {s.isPaymentCompulsoryThisCycle ? 'Payment Due' : paymentLabel(s.paymentStatus)}
                   </span>
-                  <span className="text-xs text-gray-400">
-                    {s.billingRegion === 'abroad' ? 'Abroad' : 'India'}
+                  <span className={`text-xs font-medium ${(s as unknown as Record<string,unknown>).isActive === false ? 'text-red-500' : 'text-green-600'}`}>
+                    {(s as unknown as Record<string,unknown>).isActive === false ? 'Inactive' : 'Active'}
                   </span>
+                  <div className="flex gap-1 mt-0.5">
+                    {(s as unknown as Record<string,unknown>).isActive === false ? (
+                      <button
+                        onClick={() => handleToggleActive(s.userId, true)}
+                        disabled={actioningId === s.userId}
+                        className="text-xs text-green-600 border border-green-200 rounded px-2 py-0.5 hover:bg-green-50 disabled:opacity-50"
+                      >
+                        Activate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleActive(s.userId, false)}
+                        disabled={actioningId === s.userId}
+                        className="text-xs text-orange-600 border border-orange-200 rounded px-2 py-0.5 hover:bg-orange-50 disabled:opacity-50"
+                      >
+                        Deactivate
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setConfirmDelete(s.userId)}
+                      disabled={actioningId === s.userId}
+                      className="text-xs text-red-600 border border-red-200 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                   {(s.isPaymentCompulsoryThisCycle || (s.consecutiveViolationCount ?? 0) > 0) && (
                     <button
                       onClick={() => {
@@ -333,6 +394,34 @@ export default function StudentsPage() {
         <p className="text-xs text-gray-400 text-center">
           Showing {filtered.length} of {students.length} students
         </p>
+      )}
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-4">
+            <h2 className="font-heading text-lg font-bold text-charcoal">Delete Student?</h2>
+            <p className="text-sm text-gray-600">
+              This will deactivate the student&apos;s account and disable login. Their records are preserved.
+              This action can be reversed by reactivating the account.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleDelete(confirmDelete)}
+                disabled={actioningId === confirmDelete}
+                className="btn-primary bg-red-600 hover:bg-red-700 flex-1"
+              >
+                {actioningId === confirmDelete ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
