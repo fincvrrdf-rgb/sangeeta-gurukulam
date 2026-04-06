@@ -40,8 +40,8 @@ interface ClassSlot {
 const DEFAULT_SCHEDULE = [
   { batchBandCode: 'A', days: 'Mon, Wed', time: '5:30 – 6:30 AM', dayOfWeek: [1, 3], start: '05:30', end: '06:30' },
   { batchBandCode: 'B', days: 'Mon, Wed', time: '4:30 – 5:30 PM', dayOfWeek: [1, 3], start: '16:30', end: '17:30' },
-  { batchBandCode: 'C', days: 'Tue, Fri',  time: '5:30 – 6:30 AM', dayOfWeek: [2, 5], start: '05:30', end: '06:30' },
-  { batchBandCode: 'D', days: 'Tue, Fri',  time: '4:30 – 5:30 PM', dayOfWeek: [2, 5], start: '16:30', end: '17:30' },
+  { batchBandCode: 'C', days: 'Tue, Thu',  time: '5:30 – 6:30 AM', dayOfWeek: [2, 4], start: '05:30', end: '06:30' },
+  { batchBandCode: 'D', days: 'Tue, Thu',  time: '4:30 – 5:30 PM', dayOfWeek: [2, 4], start: '16:30', end: '17:30' },
 ] as const;
 
 function toYMD(d: Date): string {
@@ -302,8 +302,8 @@ export default function ManageClassesPage() {
           <div className="text-sm space-y-1 text-gray-700">
             <p>&#x1F7E1; <strong>Batch A</strong> — Mon, Wed · 5:30–6:30 AM</p>
             <p>&#x1F7E0; <strong>Batch B</strong> — Mon, Wed · 4:30–5:30 PM</p>
-            <p>&#x1F7E2; <strong>Batch C</strong> — Tue, Fri · 5:30–6:30 AM</p>
-            <p>&#x1F7E3; <strong>Batch D</strong> — Tue, Fri · 4:30–5:30 PM</p>
+            <p>&#x1F7E2; <strong>Batch C</strong> — Tue, Thu · 5:30–6:30 AM</p>
+            <p>&#x1F7E3; <strong>Batch D</strong> — Tue, Thu · 4:30–5:30 PM</p>
           </div>
           {setupMsg && (
             <p className="text-sm text-saffron-700" dangerouslySetInnerHTML={{ __html: setupMsg }} />
