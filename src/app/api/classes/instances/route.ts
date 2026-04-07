@@ -57,9 +57,11 @@ export async function GET(request: NextRequest) {
         { type: 'where', field: 'userId', op: '==', value: auth.uid },
       ]);
       const studentProfile = studentProfiles[0];
-      if (studentProfile?.currentBatchBandId) {
-        instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
+      if (!studentProfile?.currentBatchBandId) {
+        // Student has no batch assigned yet — return empty so they know to onboard
+        return Response.json({ success: true, instances: [] });
       }
+      instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
     }
 
     // Resolve batchBandId → batchBand code ('A'/'B'/'C'/'D') for display

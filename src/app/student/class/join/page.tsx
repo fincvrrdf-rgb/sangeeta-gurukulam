@@ -23,6 +23,7 @@ interface ClassInstance {
   googleMeetLink?: string;
   status: string;
   batchBandId: string;
+  batchBand?: string;
 }
 
 const SCHEDULE_INFO: Record<string, string> = {
@@ -158,7 +159,7 @@ export default function JoinClassPage() {
                   <p className="font-medium text-charcoal">
                     {formatTime(instance.scheduledStartTime)} – {formatTime(instance.scheduledEndTime)} IST
                   </p>
-                  <p className="text-sm text-gray-500 mt-0.5">Batch {instance.batchBandId}</p>
+                  <p className="text-sm text-gray-500 mt-0.5">Batch {instance.batchBand || instance.batchBandId}</p>
                 </div>
                 <span className={`badge ${
                   classStatus === 'joinable' ? 'badge-success' :

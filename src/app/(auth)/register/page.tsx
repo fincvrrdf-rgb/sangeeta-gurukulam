@@ -32,10 +32,20 @@ export default function RegisterPage() {
     setError(''); setLoading(true);
     try {
       const user = await registerWithEmail(email, password);
+      // Force-refresh token to get current custom claims
+      const tokenResult = await user.getIdTokenResult(true);
+      const existingRole = tokenResult.claims.role as string | undefined;
+      if (existingRole) {
+        // User already has a role — redirect appropriately, don't downgrade
+        if (existingRole === 'super_admin') router.push('/admin');
+        else if (existingRole === 'teacher') router.push('/teacher');
+        else router.push('/student');
+        return;
+      }
       const idToken = await user.getIdToken();
       await assignStudentRole(user.uid, email, displayName, idToken);
       await user.getIdToken(true);
-      router.push('/student');
+      router.push('/student/onboarding');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed';
       setError(msg.includes('email-already-in-use') ? 'This email is already registered.' : msg.includes('weak-password') ? 'Password must be at least 6 characters.' : msg);
@@ -47,10 +57,20 @@ export default function RegisterPage() {
     setError(''); setLoading(true);
     try {
       const user = await loginWithGoogle();
+      // Force-refresh token to get current custom claims
+      const tokenResult = await user.getIdTokenResult(true);
+      const existingRole = tokenResult.claims.role as string | undefined;
+      if (existingRole) {
+        // User already has a role — redirect appropriately, don't downgrade
+        if (existingRole === 'super_admin') router.push('/admin');
+        else if (existingRole === 'teacher') router.push('/teacher');
+        else router.push('/student');
+        return;
+      }
       const idToken = await user.getIdToken();
       await assignStudentRole(user.uid, user.email || '', user.displayName || '', idToken);
       await user.getIdToken(true);
-      router.push('/student');
+      router.push('/student/onboarding');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Google sign-up failed';
       if (!msg.includes('popup-closed')) setError(msg);

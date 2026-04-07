@@ -16,6 +16,11 @@ interface PaymentSummary {
   currentStatus: string;
 }
 
+interface StudentProfile {
+  currentBatchBandId?: string;
+  onboardingComplete?: boolean;
+}
+
 const QUICK_LINKS = [
   { icon: '🎵', label: 'Join Class', href: '/student/class/join', primary: true },
   { icon: '🙏', label: 'Join Bhajan', href: '/student/bhajan', primary: true },
@@ -42,6 +47,7 @@ export default function StudentDashboard() {
   const { user, apiFetch } = useAuthContext();
   const [payment, setPayment] = useState<PaymentSummary | null>(null);
   const [loadingPayment, setLoadingPayment] = useState(true);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -59,6 +65,11 @@ export default function StudentDashboard() {
       })
       .catch(() => setPayment(null))
       .finally(() => setLoadingPayment(false));
+
+    apiFetch('/api/student/profile')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setProfile(data))
+      .catch(() => null);
   }, [user, apiFetch]);
 
   const firstName = user?.displayName?.split(' ')[0] ?? 'Student';
@@ -107,6 +118,22 @@ export default function StudentDashboard() {
               className="mt-2 inline-block btn-danger text-xs px-3 py-1.5"
             >
               Upload Now
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding banner — shown when no batch selected */}
+      {profile !== null && !profile.currentBatchBandId && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+          <span className="text-xl flex-shrink-0">🎵</span>
+          <div className="flex-1">
+            <p className="font-medium text-amber-900 text-sm">Complete your setup</p>
+            <p className="text-xs text-amber-800 mt-0.5">
+              Please select your class batch to start joining classes.
+            </p>
+            <Link href="/student/onboarding" className="mt-2 inline-block btn-primary text-xs px-3 py-1.5">
+              Select Batch
             </Link>
           </div>
         </div>

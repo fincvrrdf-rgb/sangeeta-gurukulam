@@ -35,27 +35,27 @@ function SkeletonItem() {
 const STOTRAM_LINKS = [
   {
     title: 'Ganesha Pancharatnam',
-    url: 'https://www.greenmsg.org/stotram/ganesha_pancharatnam.php',
+    url: 'https://greenmesg.org/stotrams/ganesha-pancharatnam.php',
     deity: 'Ganesha',
   },
   {
     title: 'Shiva Panchakshara Stotram',
-    url: 'https://www.greenmsg.org/stotram/shiva_panchakshara_stotram.php',
+    url: 'https://greenmesg.org/stotrams/shiva-panchakshara-stotram.php',
     deity: 'Shiva',
   },
   {
     title: 'Suryashtakam',
-    url: 'https://www.greenmsg.org/stotram/suryashtakam.php',
+    url: 'https://greenmesg.org/stotrams/suryaashtakam.php',
     deity: 'Surya',
   },
   {
     title: 'Mahishasura Mardini Stotram',
-    url: 'https://www.greenmsg.org/stotram/mahishasura_mardini_stotram.php',
+    url: 'https://greenmesg.org/stotrams/mahishasura-mardini-stotram.php',
     deity: 'Devi',
   },
   {
     title: 'Durga Saptashloki',
-    url: 'https://www.greenmsg.org/stotram/durga_saptashloki.php',
+    url: 'https://greenmesg.org/stotrams/durga-saptashloki.php',
     deity: 'Durga',
   },
 ];
@@ -151,14 +151,14 @@ export default function LyricsListPage() {
                       </p>
                       <span className="text-xs text-gray-400">{item.deity}</span>
                     </div>
-                    <span className="text-xs text-saffron-600 flex-shrink-0">greenmsg.org &#x2197;</span>
+                    <span className="text-xs text-saffron-600 flex-shrink-0">greenmesg.org &#x2197;</span>
                   </a>
                 </li>
               ))}
             </ul>
           </div>
           <p className="text-xs text-gray-400 mt-1.5">
-            Lyrics sourced from <a href="https://www.greenmsg.org/stotram/" target="_blank" rel="noopener noreferrer" className="underline hover:text-saffron-600">greenmsg.org</a>
+            Lyrics sourced from <a href="https://greenmesg.org/stotrams/" target="_blank" rel="noopener noreferrer" className="underline hover:text-saffron-600">greenmesg.org</a>
           </p>
         </section>
       )}

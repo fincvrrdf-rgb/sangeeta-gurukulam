@@ -2,6 +2,7 @@
  * Lyrics Management List — /teacher/lyrics
  *
  * Lists all lyrics (including drafts), with status filter and link to create.
+ * Card-based layout matching the student portal style.
  */
 
 'use client';
@@ -28,29 +29,12 @@ const FILTERS: { label: string; value: FilterValue }[] = [
   { label: 'Published', value: 'published' },
 ];
 
-function statusBadge(status: LyricsStatus) {
-  return status === 'published' ? 'badge badge-success' : 'badge badge-warning';
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
-}
-
-function SkeletonRow() {
-  return (
-    <div className="flex items-center gap-4 px-5 py-4 animate-pulse">
-      <div className="flex-1 space-y-1.5">
-        <div className="h-3 w-40 bg-gray-200 rounded" />
-        <div className="h-2.5 w-28 bg-gray-200 rounded" />
-      </div>
-      <div className="h-5 w-16 bg-gray-200 rounded-full" />
-      <div className="h-3 w-20 bg-gray-200 rounded" />
-    </div>
-  );
 }
 
 export default function LyricsListPage() {
@@ -92,7 +76,7 @@ export default function LyricsListPage() {
   const filtered = filter === 'all' ? lyrics : lyrics.filter((l) => l.status === filter);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -100,7 +84,7 @@ export default function LyricsListPage() {
           <p className="text-sm text-gray-500 mt-0.5">Manage all song lyrics and drafts</p>
         </div>
         <Link href="/teacher/lyrics/create" className="btn-primary">
-          + Create New Lyrics
+          + New
         </Link>
       </div>
 
@@ -128,10 +112,15 @@ export default function LyricsListPage() {
         ))}
       </div>
 
-      {/* List */}
+      {/* Cards */}
       {loading ? (
-        <div className="card p-0 divide-y divide-gray-100">
-          {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="card animate-pulse">
+              <div className="h-4 w-40 bg-gray-200 rounded mb-2" />
+              <div className="h-3 w-28 bg-gray-200 rounded" />
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="card flex flex-col items-center py-16 text-center">
@@ -147,45 +136,31 @@ export default function LyricsListPage() {
           </Link>
         </div>
       ) : (
-        <div className="card p-0 divide-y divide-gray-100">
-          {/* Column headers */}
-          <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-5 py-3 bg-gray-50 rounded-t-xl">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Title / Unit</span>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</span>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Updated</span>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</span>
-          </div>
-
+        <div className="space-y-3">
           {filtered.map((item) => (
-            <div key={item.id} className="flex items-center gap-4 px-5 py-4">
-              <div className="flex-1 min-w-0">
+            <div key={item.id} className="card flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-charcoal truncate">{item.title}</p>
-                <p className="text-xs text-gray-500 truncate">{item.teachingUnitName}</p>
-                {/* Mobile: status + date */}
-                <div className="flex items-center gap-2 mt-1 sm:hidden">
-                  <span className={statusBadge(item.status)}>{item.status}</span>
+                <p className="text-xs text-gray-500 truncate mt-0.5">{item.teachingUnitName}</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className={item.status === 'published' ? 'badge badge-success' : 'badge badge-warning'}>
+                    {item.status}
+                  </span>
                   <span className="text-xs text-gray-400">{formatDate(item.updatedAt)}</span>
                 </div>
               </div>
-              <span className={`hidden sm:inline-flex ${statusBadge(item.status)}`}>
-                {item.status}
-              </span>
-              <p className="hidden sm:block text-xs text-gray-500 w-24 flex-shrink-0 text-right">
-                {formatDate(item.updatedAt)}
-              </p>
-              <Link
-                href={`/teacher/lyrics/${item.id}`}
-                className="btn-secondary text-xs flex-shrink-0"
-              >
-                Edit
-              </Link>
-              <button
-                onClick={() => handleDelete(item.id)}
-                disabled={deleting === item.id}
-                className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                {deleting === item.id ? '…' : 'Delete'}
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link href={`/teacher/lyrics/${item.id}`} className="btn-secondary text-xs">
+                  Edit
+                </Link>
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  disabled={deleting === item.id}
+                  className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
+                >
+                  {deleting === item.id ? '…' : 'Delete'}
+                </button>
+              </div>
             </div>
           ))}
         </div>

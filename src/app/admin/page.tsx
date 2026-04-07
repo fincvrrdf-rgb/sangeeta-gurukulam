@@ -74,6 +74,13 @@ const QUICK_ACTIONS = [
     description: 'Festivals, vrats, observances',
     primary: false,
   },
+  {
+    icon: '🎤',
+    label: 'Bhajan Sessions',
+    href: '/teacher/bhajan',
+    description: 'Go live for bhajan sessions',
+    primary: false,
+  },
 ];
 
 function StatCard({

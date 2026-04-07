@@ -54,7 +54,10 @@ export async function POST(request: NextRequest) {
     // 2. A user with no role can set their own role to 'student' only (self-registration)
     // 3. A user re-registering with the same role (idempotent) — allowed
     if (callerRole === 'super_admin') {
-      // Allowed — admin can do anything
+      // Guard: super_admin cannot demote themselves
+      if (callerUid === targetUserId && role !== 'super_admin') {
+        throw new AuthError(403, 'Super admin cannot change their own role.');
+      }
     } else if (!callerRole && callerUid === targetUserId && role === 'student') {
       // Self-registration as student — allowed
     } else if (callerRole === role && callerUid === targetUserId) {

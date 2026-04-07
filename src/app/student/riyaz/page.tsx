@@ -317,13 +317,16 @@ export default function RiyazPage() {
           setDetectedFreq(Math.round(freq * 10) / 10);
           const saFreq = PITCH_FREQS[selectedPitch] ?? 261.63;
           const targetFreq = saFreq * SWARA_RATIOS[currentSwaraIdx].ratio;
-          // Check octaves up/down
-          let best = Infinity;
+          // Check octaves up/down — find closest octave, track signed cents separately
+          let bestAbs = Infinity;
+          let bestCents = 0;
           for (const mult of [0.5, 1, 2, 4]) {
-            const c = Math.abs(freqToCents(freq, targetFreq * mult));
-            if (c < Math.abs(best)) best = freqToCents(freq, targetFreq * mult);
+            const signed = freqToCents(freq, targetFreq * mult);
+            const abs = Math.abs(signed);
+            if (abs < bestAbs) { bestAbs = abs; bestCents = signed; }
           }
-          setCentsOff(best);
+          // EMA smoothing for stability
+          setCentsOff((prev) => (prev === null ? bestCents : prev * 0.7 + bestCents * 0.3));
         } else {
           setDetectedFreq(null);
           setCentsOff(null);
