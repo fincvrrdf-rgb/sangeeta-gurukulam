@@ -184,6 +184,7 @@ export default function DevotionalCalendarPage() {
   // AI fetch state
   const [fetchingAi, setFetchingAi] = useState(false);
   const [aiRegion, setAiRegion] = useState<'india' | 'international'>('india');
+  const [seeding2026, setSeeding2026] = useState(false);
 
   const load = useCallback(() => {
     if (!user) return;
@@ -263,6 +264,27 @@ export default function DevotionalCalendarPage() {
     }
   }
 
+  async function reseed2026() {
+    if (!confirm('This will DELETE all 2026 events and replace them with curated 2026 festival dates. Continue?')) return;
+    setSeeding2026(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+    try {
+      const res = await apiFetch('/api/admin/devotional-calendar/seed-2026', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setSaveError(json.error ?? 'Failed to reseed 2026.');
+        return;
+      }
+      setSaveSuccess(`Reseeded 2026: cleared ${json.cleared} old events, created ${json.created} correct 2026 events.`);
+      load();
+    } catch {
+      setSaveError('Network error during reseed.');
+    } finally {
+      setSeeding2026(false);
+    }
+  }
+
   async function fetchFromDrikPanchang() {
     setFetchingAi(true);
     setSaveError(null);
@@ -319,6 +341,25 @@ export default function DevotionalCalendarPage() {
         >
           {showForm ? 'Cancel' : '+ Add Event'}
         </button>
+      </div>
+
+      {/* Reseed 2026 — one-click fix for correct Hindu festival dates */}
+      <div className="card border-green-200 bg-green-50">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-green-900">Reseed All 2026 Festivals</p>
+            <p className="text-xs text-green-700 mt-0.5">
+              Clears any wrong dates and populates all correct 2026 Hindu festival dates (curated from Drik Panchang).
+            </p>
+          </div>
+          <button
+            onClick={reseed2026}
+            disabled={seeding2026}
+            className="btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 text-xs flex-shrink-0"
+          >
+            {seeding2026 ? 'Reseeding…' : '✦ Reseed 2026'}
+          </button>
+        </div>
       </div>
 
       {/* AI Fetch from Drik Panchang */}
