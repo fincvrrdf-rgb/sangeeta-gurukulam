@@ -64,6 +64,16 @@ export async function GET(request: NextRequest) {
       instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
     }
 
+    // Permanent default Meet links per batch
+    // Batch A & B (Mon/Wed) → spv-exsq-sfm
+    // Batch C & D (Tue/Thu) → iyq-wdqw-cfj
+    const DEFAULT_MEET_LINKS: Record<string, string> = {
+      'A': 'https://meet.google.com/spv-exsq-sfm',
+      'B': 'https://meet.google.com/spv-exsq-sfm',
+      'C': 'https://meet.google.com/iyq-wdqw-cfj',
+      'D': 'https://meet.google.com/iyq-wdqw-cfj',
+    };
+
     // Resolve batchBandId → batchBand code ('A'/'B'/'C'/'D') for display
     const uniqueBatchIds = [...new Set(instances.map((i) => i.batchBandId).filter(Boolean))];
     const batchCodeMap: Record<string, string> = {};
@@ -72,13 +82,15 @@ export async function GET(request: NextRequest) {
       if (band) batchCodeMap[bandId] = band.code as string;
     }
 
-    // Attach batchBand code and normalise meetLink from either stored field
+    // Attach batchBand code and meetLink — use instance-specific link or batch default
     instances = instances.map((i) => {
       const raw = i as unknown as Record<string, unknown>;
-      const link = (raw.meetLink as string) || (raw.googleMeetLink as string) || undefined;
+      const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? i.batchBandId;
+      const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string);
+      const link = instanceLink || DEFAULT_MEET_LINKS[code] || undefined;
       return {
         ...i,
-        batchBand: batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? i.batchBandId,
+        batchBand: code,
         meetLink: link,
         googleMeetLink: link,
       };
