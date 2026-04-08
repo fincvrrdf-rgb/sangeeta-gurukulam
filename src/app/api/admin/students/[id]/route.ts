@@ -27,6 +27,17 @@ export async function PATCH(
     const auth = await requireAuth(request, ['super_admin']);
     const { id } = await params;
 
+    // Never allow modifying your own account or a super_admin via this route
+    if (id === auth.uid) {
+      return Response.json({ error: 'You cannot modify your own account here.' }, { status: 403 });
+    }
+    try {
+      const targetUser = await adminAuth.getUser(id);
+      if (targetUser.customClaims?.role === 'super_admin') {
+        return Response.json({ error: 'Cannot modify a super admin account.' }, { status: 403 });
+      }
+    } catch { /* user may not exist in Auth yet, continue */ }
+
     const body = await request.json();
     const parsed = UpdateStudentSchema.safeParse(body);
     if (!parsed.success) {
@@ -79,6 +90,18 @@ export async function DELETE(
   try {
     const auth = await requireAuth(request, ['super_admin']);
     const { id } = await params;
+
+    // Never allow deleting your own account or another super_admin
+    if (id === auth.uid) {
+      return Response.json({ error: 'You cannot delete your own account.' }, { status: 403 });
+    }
+    try {
+      const targetUser = await adminAuth.getUser(id);
+      const targetRole = targetUser.customClaims?.role;
+      if (targetRole === 'super_admin') {
+        return Response.json({ error: 'Cannot delete a super admin account.' }, { status: 403 });
+      }
+    } catch { /* user may not exist in Auth yet, continue */ }
 
     const profile = await getDoc(COLLECTIONS.STUDENT_PROFILES, id);
     if (!profile) {
