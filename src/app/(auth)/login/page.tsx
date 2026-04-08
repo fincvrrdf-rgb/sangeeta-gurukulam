@@ -33,7 +33,9 @@ export default function LoginPage() {
       handleRedirect(tokenResult.claims.role as string || null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
-      setError(msg.includes('auth/') ? 'Invalid email or password.' : msg);
+      if (msg.includes('auth/user-disabled')) setError('This account has been disabled. Please contact the administrator.');
+      else if (msg.includes('auth/')) setError('Invalid email or password.');
+      else setError(msg);
     } finally { setLoading(false); }
   };
 
@@ -45,7 +47,8 @@ export default function LoginPage() {
       handleRedirect(tokenResult.claims.role as string || null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Google login failed';
-      if (!msg.includes('popup-closed')) setError(msg);
+      if (msg.includes('auth/user-disabled')) setError('This account has been disabled. Please contact the administrator.');
+      else if (!msg.includes('popup-closed')) setError(msg);
     } finally { setLoading(false); }
   };
 
