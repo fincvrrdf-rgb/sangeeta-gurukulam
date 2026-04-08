@@ -17,15 +17,22 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['super_admin']);
 
-    const students = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
+    const allProfiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
 
-    // Build email map
+    // Filter out super_admin and teacher accounts — only real students
     const emailMap: Record<string, string> = {};
-    for (const s of students) {
+    const students: Record<string, unknown>[] = [];
+
+    for (const s of allProfiles) {
       try {
         const fbUser = await adminAuth.getUser(s.userId as string);
+        const claims = fbUser.customClaims as Record<string, unknown> | undefined;
+        const role = claims?.role as string | undefined;
+        // Skip anyone who is super_admin or teacher
+        if (role === 'super_admin' || role === 'teacher') continue;
         emailMap[s.userId as string] = fbUser.email || '';
-      } catch { /* skip */ }
+        students.push(s);
+      } catch { /* skip deleted auth accounts */ }
     }
 
     return Response.json({ students, emailMap });

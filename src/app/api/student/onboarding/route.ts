@@ -8,7 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { queryDocs, setDoc, nowISO } from '@/lib/firebase/firestore';
+import { queryDocs, updateDoc, nowISO } from '@/lib/firebase/firestore';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { COLLECTIONS } from '@/domain/constants';
 import { z } from 'zod';
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
     const band = bands[0];
     const batchBandId = band.id as string;
 
-    // Update student profile
-    await setDoc(COLLECTIONS.STUDENT_PROFILES, auth.uid, {
+    // Merge-update only these fields — do NOT overwrite the rest of the profile
+    await updateDoc(COLLECTIONS.STUDENT_PROFILES, auth.uid, {
       currentBatchBandId: batchBandId,
       onboardingComplete: true,
       updatedAt: nowISO(),

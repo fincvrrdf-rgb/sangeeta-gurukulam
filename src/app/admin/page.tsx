@@ -170,15 +170,18 @@ export default function AdminDashboard() {
     // Fetch batch + syllabus as a proxy for active classes count
     Promise.all([
       apiFetch('/api/admin/batches').then((r) => r.json()),
-      apiFetch('/api/admin/syllabus').then((r) => r.json()),
+      apiFetch('/api/admin/students').then((r) => r.json()),
+      apiFetch('/api/admin/teachers').then((r) => r.json()),
     ])
-      .then(([batchData, syllabusData]) => {
+      .then(([batchData, studentData, teacherData]) => {
         const activeBatches = (batchData.batches ?? []).filter(
           (b: { isActive?: boolean }) => b.isActive
         ).length;
+        const totalStudents = (studentData.students ?? []).length;
+        const totalTeachers = (teacherData.teachers ?? []).length;
         setStats({
-          totalStudents: 0,
-          totalTeachers: 0,
+          totalStudents,
+          totalTeachers,
           activeClasses: activeBatches,
           pendingPayments: 0,
         });

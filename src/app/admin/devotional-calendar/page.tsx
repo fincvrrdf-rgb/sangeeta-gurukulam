@@ -349,7 +349,7 @@ export default function DevotionalCalendarPage() {
           <div>
             <p className="text-sm font-semibold text-green-900">Reseed All 2026 Festivals</p>
             <p className="text-xs text-green-700 mt-0.5">
-              Clears any wrong dates and populates all correct 2026 Hindu festival dates (curated from Drik Panchang).
+              Clears wrong dates and fetches accurate 2026 Hindu festival dates via AI web search (Drik Panchang). Takes ~60 seconds — do not close the page.
             </p>
           </div>
           <button

@@ -12,7 +12,8 @@ import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
 
 const UpdateInstanceSchema = z.object({
-  meetLink: z.string().url().optional(),
+  // Accept with or without https:// — normalize below
+  meetLink: z.string().min(1).optional(),
   status: z.enum(['scheduled', 'live', 'completed', 'cancelled']).optional(),
   notes: z.string().optional(),
 });
@@ -37,7 +38,16 @@ export async function PATCH(
     }
 
     const updates: Record<string, unknown> = { updatedAt: nowISO() };
-    if (parsed.data.meetLink !== undefined) updates.googleMeetLink = parsed.data.meetLink;
+    if (parsed.data.meetLink !== undefined) {
+      // Normalize: ensure https:// prefix
+      let link = parsed.data.meetLink.trim();
+      if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+        link = 'https://' + link;
+      }
+      // Store in both fields so all code paths find it
+      updates.googleMeetLink = link;
+      updates.meetLink = link;
+    }
     if (parsed.data.status !== undefined) updates.status = parsed.data.status;
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
 

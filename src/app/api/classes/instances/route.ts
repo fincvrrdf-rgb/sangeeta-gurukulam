@@ -72,12 +72,17 @@ export async function GET(request: NextRequest) {
       if (band) batchCodeMap[bandId] = band.code as string;
     }
 
-    // Alias googleMeetLink as meetLink and attach batchBand code for all clients
-    instances = instances.map((i) => ({
-      ...i,
-      batchBand: batchCodeMap[i.batchBandId] ?? (i as unknown as Record<string, unknown>).batchBand ?? i.batchBandId,
-      meetLink: i.googleMeetLink ?? undefined,
-    }));
+    // Attach batchBand code and normalise meetLink from either stored field
+    instances = instances.map((i) => {
+      const raw = i as unknown as Record<string, unknown>;
+      const link = (raw.meetLink as string) || (raw.googleMeetLink as string) || undefined;
+      return {
+        ...i,
+        batchBand: batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? i.batchBandId,
+        meetLink: link,
+        googleMeetLink: link,
+      };
+    });
 
     return Response.json({ success: true, instances });
   } catch (error) {
