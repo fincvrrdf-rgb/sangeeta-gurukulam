@@ -35,20 +35,31 @@ export async function GET(request: NextRequest) {
       { type: 'limit', value: limit },
     ]);
 
-    // If nothing today and requesting today, check yesterday (session may carry over)
+    // If no session exists for today, auto-create one — bhajan runs every day
     if (sessions.length === 0 && date === today) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yday = yesterday.toISOString().slice(0, 10);
-      const prev = await queryDocs<BhajanSession>(COLLECTIONS.BHAJAN_SESSIONS, [
-        { type: 'where', field: 'sessionDate', op: '==', value: yday },
+      await createDoc(COLLECTIONS.BHAJAN_SESSIONS, {
+        sessionDate: today,
+        title: '',
+        announcement: '',
+        youtubeUrl: null,
+        youtubeLink: null,
+        youtubeReplayUrl: null,
+        status: 'scheduled',
+        scheduledTime: '17:30',
+        timezone: 'Asia/Kolkata',
+        cancellationReason: null,
+        lyricsIds: [],
+        devotionalContext: '',
+        notes: '',
+        managedBy: 'system',
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+      });
+      sessions = await queryDocs<BhajanSession>(COLLECTIONS.BHAJAN_SESSIONS, [
+        { type: 'where', field: 'sessionDate', op: '==', value: today },
         { type: 'orderBy', field: 'createdAt', direction: 'desc' },
         { type: 'limit', value: 1 },
       ]);
-      // Only return yesterday's session if it's still live or was ended very recently
-      if (prev.length > 0 && prev[0].status === 'live') {
-        sessions = prev;
-      }
     }
 
     return Response.json({ sessions });
