@@ -11,7 +11,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { queryDocs, createDoc, nowISO } from '@/lib/firebase/firestore';
+import { queryDocs, getDoc, createDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import type { ClassSlot } from '@/domain/types';
 
@@ -96,6 +96,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Default Meet links per batch code — same link for every class unless overridden
+    const DEFAULT_MEET_LINKS: Record<string, string> = {
+      'A': 'https://meet.google.com/spv-exsq-sfm',
+      'B': 'https://meet.google.com/spv-exsq-sfm',
+      'C': 'https://meet.google.com/iyq-wdqw-cfj',
+      'D': 'https://meet.google.com/iyq-wdqw-cfj',
+    };
+
+    // Resolve all unique batchBandIds → code once before the loop
+    const uniqueBandIds = [...new Set(slots.map((s) => s.batchBandId).filter(Boolean))];
+    const bandCodeMap: Record<string, string> = {};
+    for (const bandId of uniqueBandIds) {
+      const band = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, bandId);
+      if (band) bandCodeMap[bandId] = band.code as string;
+    }
+
     let created = 0;
     const errors: string[] = [];
 
@@ -119,6 +135,9 @@ export async function POST(request: NextRequest) {
           const startTime = istTimestamp(dateStr, slot.startTimeLocal || '05:30');
           const endTime = istTimestamp(dateStr, slot.endTimeLocal || '06:30');
 
+          const batchCode = bandCodeMap[slot.batchBandId] ?? '';
+          const defaultLink = DEFAULT_MEET_LINKS[batchCode] ?? null;
+
           await createDoc(COLLECTIONS.CLASS_INSTANCES, {
             slotId: slot.id,
             teacherId: slot.teacherId || '',
@@ -129,7 +148,8 @@ export async function POST(request: NextRequest) {
             status: 'scheduled',
             cancellationReason: null,
             rescheduleTargetInstanceId: null,
-            googleMeetLink: null,
+            googleMeetLink: defaultLink,
+            meetLink: defaultLink,
             googleCalendarEventId: null,
             lessonPlanItemId: null,
             teachingUnitId: null,
