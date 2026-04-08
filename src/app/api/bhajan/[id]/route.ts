@@ -13,7 +13,7 @@ import type { BhajanSession } from '@/domain/types';
 import { z } from 'zod';
 
 const UpdateBhajanSchema = z.object({
-  youtubeLink: z.string().url().optional(),
+  youtubeLink: z.string().min(1).optional(), // Accept any string, normalize below
   status: z.enum(['scheduled', 'live', 'ended']).optional(),
   attendeeCount: z.number().min(0).optional(),
 });
@@ -38,7 +38,15 @@ export async function PATCH(
     }
 
     const updates: Record<string, unknown> = {};
-    if (parsed.data.youtubeLink !== undefined) updates.youtubeUrl = parsed.data.youtubeLink;
+    if (parsed.data.youtubeLink !== undefined) {
+      let link = parsed.data.youtubeLink.trim();
+      if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+        link = 'https://' + link;
+      }
+      // Store in both fields so all code paths find it
+      updates.youtubeUrl = link;
+      updates.youtubeLink = link;
+    }
     if (parsed.data.status !== undefined) updates.status = parsed.data.status;
     if (parsed.data.attendeeCount !== undefined) updates.attendeeCount = parsed.data.attendeeCount;
 

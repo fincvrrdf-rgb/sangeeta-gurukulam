@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 const CreateBhajanSchema = z.object({
   date: z.string().min(1),
-  youtubeLink: z.string().url().optional(),
+  youtubeLink: z.string().min(1).optional(),
   status: z.enum(['scheduled', 'live', 'ended']).default('scheduled'),
 });
 
@@ -24,14 +24,32 @@ export async function GET(request: NextRequest) {
     await requireAuth(request, []);
 
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const date = searchParams.get('date') || today;
     const limit = Math.min(Number(searchParams.get('limit') || '10'), 50);
 
-    const sessions = await queryDocs<BhajanSession>(COLLECTIONS.BHAJAN_SESSIONS, [
+    // Try today first
+    let sessions = await queryDocs<BhajanSession>(COLLECTIONS.BHAJAN_SESSIONS, [
       { type: 'where', field: 'sessionDate', op: '==', value: date },
       { type: 'orderBy', field: 'createdAt', direction: 'desc' },
       { type: 'limit', value: limit },
     ]);
+
+    // If nothing today and requesting today, check yesterday (session may carry over)
+    if (sessions.length === 0 && date === today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yday = yesterday.toISOString().slice(0, 10);
+      const prev = await queryDocs<BhajanSession>(COLLECTIONS.BHAJAN_SESSIONS, [
+        { type: 'where', field: 'sessionDate', op: '==', value: yday },
+        { type: 'orderBy', field: 'createdAt', direction: 'desc' },
+        { type: 'limit', value: 1 },
+      ]);
+      // Only return yesterday's session if it's still live or was ended very recently
+      if (prev.length > 0 && prev[0].status === 'live') {
+        sessions = prev;
+      }
+    }
 
     return Response.json({ sessions });
   } catch (error) {
