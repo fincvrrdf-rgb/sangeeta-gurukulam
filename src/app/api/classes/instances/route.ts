@@ -52,16 +52,28 @@ export async function GET(request: NextRequest) {
     if (auth.role === 'teacher') {
       instances = instances.filter((i) => i.teacherId === auth.uid);
     } else if (auth.role === 'student') {
-      // Students only see classes for their batch band
-      const studentProfiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, [
-        { type: 'where', field: 'userId', op: '==', value: auth.uid },
-      ]);
-      const studentProfile = studentProfiles[0];
-      if (!studentProfile?.currentBatchBandId) {
-        // Student has no batch assigned yet — return empty so they know to onboard
-        return Response.json({ success: true, instances: [] });
+      // Use getDoc by UID — student profile doc ID always equals user UID
+      const studentProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, auth.uid);
+      const batchBandId = studentProfile?.currentBatchBandId as string | undefined;
+
+      if (!batchBandId) {
+        // No batch selected yet — return empty with a hint
+        return Response.json({ success: true, instances: [], noBatch: true });
       }
-      instances = instances.filter((i) => i.batchBandId === studentProfile.currentBatchBandId);
+
+      // Filter by batchBandId first; also resolve code for fallback matching
+      const studentBand = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, batchBandId);
+      const studentBatchCode = studentBand?.code as string | undefined;
+
+      instances = instances.filter((i) => {
+        if (i.batchBandId === batchBandId) return true;
+        // Fallback: match by batch code if IDs differ (e.g. after re-seeding)
+        if (studentBatchCode) {
+          const instBand = i as unknown as Record<string, unknown>;
+          return (instBand.batchBand as string) === studentBatchCode;
+        }
+        return false;
+      });
     }
 
     // Permanent default Meet links per batch

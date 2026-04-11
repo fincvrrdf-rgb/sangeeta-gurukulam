@@ -58,6 +58,7 @@ export default function JoinClassPage() {
   const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [noBatch, setNoBatch] = useState(false);
   const [attendanceMsg, setAttendanceMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,7 +66,10 @@ export default function JoinClassPage() {
     const to = plusDaysIST(14);
     apiFetch(`/api/classes/instances?from=${from}&to=${to}`)
       .then((r) => r.json())
-      .then((data) => setInstances(data.instances ?? []))
+      .then((data) => {
+        setInstances(data.instances ?? []);
+        if (data.noBatch) setNoBatch(true);
+      })
       .catch(() => setError('Could not load your classes'))
       .finally(() => setLoading(false));
   }, [apiFetch]);
@@ -141,7 +145,18 @@ export default function JoinClassPage() {
         </div>
       )}
 
-      {!loading && !error && sortedDays.length === 0 && (
+      {!loading && noBatch && (
+        <div className="card text-center py-10 border-amber-200 bg-amber-50">
+          <div className="text-4xl mb-3">🎵</div>
+          <p className="text-amber-800 font-medium">You haven&apos;t selected a batch yet</p>
+          <p className="text-amber-700 text-sm mt-1">Please select your batch to see your classes.</p>
+          <a href="/student/onboarding" className="btn-primary mt-4 inline-block">
+            Select My Batch
+          </a>
+        </div>
+      )}
+
+      {!loading && !noBatch && !error && sortedDays.length === 0 && (
         <div className="card text-center py-10">
           <div className="text-4xl mb-3">📅</div>
           <p className="text-gray-600 font-medium">No upcoming classes scheduled</p>
