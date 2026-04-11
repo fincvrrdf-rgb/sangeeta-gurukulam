@@ -147,26 +147,26 @@ export default function AdminDashboard() {
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [seedingBatches, setSeedingBatches] = useState(false);
-  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState<number | null>(null);
 
-  const seedBatches = async () => {
-    setSeedingBatches(true);
-    setSeedMsg(null);
+  const runBootstrap = async () => {
+    setBootstrapping(true);
+    setBootstrapMsg('Setting up batches, schedule and classes…');
     try {
-      const r = await apiFetch('/api/admin/batches', { method: 'POST', body: JSON.stringify({ seed: true }) });
+      const r = await apiFetch('/api/admin/bootstrap', { method: 'POST' });
       const data = await r.json();
       if (data.success) {
-        setSeedMsg(data.created > 0 ? `Created ${data.created} batch(es). Refresh to see them.` : 'All batches already exist.');
-        setBatchCount((prev) => (prev ?? 0) + (data.created ?? 0));
+        setBootstrapMsg(data.message ?? 'Done! Refresh to see updates.');
+        setBatchCount(4);
       } else {
-        setSeedMsg(data.error ?? 'Seeding failed.');
+        setBootstrapMsg(data.error ?? 'Bootstrap failed. Try again.');
       }
     } catch {
-      setSeedMsg('Network error. Try again.');
+      setBootstrapMsg('Network error. Try again.');
     } finally {
-      setSeedingBatches(false);
+      setBootstrapping(false);
     }
   };
 
@@ -235,46 +235,26 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Setup Checklist — shown only when something needs attention */}
+      {/* Setup Checklist — shown only when batches not yet created */}
       {batchCount === 0 && (
         <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-lg">⚠️</span>
             <h2 className="font-semibold text-amber-900 text-sm">First-time setup needed</h2>
           </div>
-          <div className="space-y-2 text-sm text-amber-800">
-            <div className="flex items-start gap-3">
-              <span className={batchCount !== null && batchCount > 0 ? 'text-green-600' : 'text-amber-600'}>
-                {batchCount !== null && batchCount > 0 ? '✓' : '○'}
-              </span>
-              <div>
-                <p className="font-medium">Create batch bands (A, B, C, D)</p>
-                <p className="text-xs text-amber-700">Students need batches to select when they sign up.</p>
-                {batchCount === 0 && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <button
-                      onClick={seedBatches}
-                      disabled={seedingBatches}
-                      className="text-xs bg-amber-700 text-white px-3 py-1 rounded-lg hover:bg-amber-800 disabled:opacity-50"
-                    >
-                      {seedingBatches ? 'Creating…' : 'Create Batches A–D'}
-                    </button>
-                    {seedMsg && <span className="text-xs text-amber-900">{seedMsg}</span>}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-amber-600">○</span>
-              <div>
-                <p className="font-medium">Generate class instances for this week</p>
-                <p className="text-xs text-amber-700">Go to Teacher &rarr; Classes &rarr; click &ldquo;Auto-Schedule&rdquo;. Meet links are pre-filled.</p>
-                <Link href="/teacher/classes" className="inline-block mt-1 text-xs bg-amber-700 text-white px-3 py-1 rounded-lg hover:bg-amber-800">
-                  Go to Teacher Classes
-                </Link>
-              </div>
-            </div>
-          </div>
+          <p className="text-sm text-amber-800">
+            Batches, class schedule, and class instances need to be created before students can see their classes.
+          </p>
+          <button
+            onClick={runBootstrap}
+            disabled={bootstrapping}
+            className="w-full bg-amber-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-amber-800 disabled:opacity-50 transition-colors"
+          >
+            {bootstrapping ? 'Setting up…' : 'Setup Everything (Batches + Schedule + Classes)'}
+          </button>
+          {bootstrapMsg && (
+            <p className="text-xs text-amber-900 font-medium">{bootstrapMsg}</p>
+          )}
         </section>
       )}
 

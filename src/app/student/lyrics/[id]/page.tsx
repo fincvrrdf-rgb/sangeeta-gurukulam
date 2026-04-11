@@ -109,10 +109,26 @@ export default function LyricsViewerPage() {
         return r.json();
       })
       .then((data) => {
-        setLyrics(data);
+        // API returns { lyrics: {...} } — unwrap and map field names
+        const raw = data.lyrics ?? data;
+        const mapped: LyricsDetail = {
+          id: raw.id,
+          title: raw.title,
+          ragam: raw.ragam ?? '',
+          taalam: raw.taalam ?? undefined,
+          composer: raw.composer ?? undefined,
+          language: raw.originalLanguage ?? undefined,
+          original: raw.sourceText ?? raw.original ?? undefined,
+          transliteration: raw.transliteration ?? undefined,
+          translation: raw.translations?.en?.text ?? raw.translation ?? undefined,
+          meaning: raw.meaning ?? undefined,
+          attachedFiles: raw.attachedFiles ?? [],
+          teachingUnit: raw.teachingUnit ?? undefined,
+        };
+        setLyrics(mapped);
         // Auto-select first populated tab
         const first = TABS.find(
-          (t) => data[t.key] && data[t.key].trim().length > 0
+          (t) => mapped[t.key] && (mapped[t.key] as string).trim().length > 0
         );
         if (first) setActiveTab(first.key);
       })
