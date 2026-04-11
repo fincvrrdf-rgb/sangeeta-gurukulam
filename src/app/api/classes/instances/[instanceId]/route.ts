@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { getDoc, updateDoc, deleteDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
@@ -66,6 +66,39 @@ export async function PATCH(
     });
 
     return Response.json({ success: true, instanceId });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ instanceId: string }> }
+) {
+  try {
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
+    const { instanceId } = await params;
+
+    const existing = await getDoc(COLLECTIONS.CLASS_INSTANCES, instanceId);
+    if (!existing) {
+      return Response.json({ error: 'Class instance not found' }, { status: 404 });
+    }
+
+    await deleteDoc(COLLECTIONS.CLASS_INSTANCES, instanceId);
+
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    await writeAuditLog({
+      actorId: auth.uid,
+      actorRole: auth.role,
+      action: 'CLASS_INSTANCE_DELETED',
+      entityType: 'class_instance',
+      entityId: instanceId,
+      newState: { deleted: true },
+      ipAddress,
+      userAgent,
+    });
+
+    return Response.json({ success: true });
   } catch (error) {
     return authErrorResponse(error);
   }

@@ -139,6 +139,7 @@ export default function ManageClassesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [meetLinkId, setMeetLinkId] = useState<string | null>(null);
   const [meetLinkInput, setMeetLinkInput] = useState('');
   const [savingMeet, setSavingMeet] = useState(false);
@@ -183,6 +184,20 @@ export default function ManageClassesPage() {
       alert('Could not cancel the class. Please try again.');
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Permanently delete this class instance? This cannot be undone.')) return;
+    setDeletingId(id);
+    try {
+      const res = await apiFetch(`/api/classes/instances/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setInstances((prev) => prev.filter((inst) => inst.id !== id));
+    } catch {
+      alert('Could not delete the class. Please try again.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -422,6 +437,13 @@ export default function ManageClassesPage() {
                             className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                           >
                             {cancellingId === inst.id ? '…' : 'Cancel'}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(inst.id)}
+                            disabled={deletingId === inst.id}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                          >
+                            {deletingId === inst.id ? '…' : 'Delete'}
                           </button>
                         </div>
                       )}
