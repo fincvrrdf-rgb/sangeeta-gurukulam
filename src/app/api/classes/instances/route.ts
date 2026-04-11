@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       const raw = i as unknown as Record<string, unknown>;
       const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? i.batchBandId;
       const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string);
-      const link = instanceLink || DEFAULT_MEET_LINKS[code] || undefined;
+      const link = instanceLink || DEFAULT_MEET_LINKS[code] || null;
       return {
         ...i,
         batchBand: code,

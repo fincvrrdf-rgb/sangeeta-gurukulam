@@ -147,6 +147,28 @@ export default function AdminDashboard() {
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [seedingBatches, setSeedingBatches] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [batchCount, setBatchCount] = useState<number | null>(null);
+
+  const seedBatches = async () => {
+    setSeedingBatches(true);
+    setSeedMsg(null);
+    try {
+      const r = await apiFetch('/api/admin/batches', { method: 'POST', body: JSON.stringify({ seed: true }) });
+      const data = await r.json();
+      if (data.success) {
+        setSeedMsg(data.created > 0 ? `Created ${data.created} batch(es). Refresh to see them.` : 'All batches already exist.');
+        setBatchCount((prev) => (prev ?? 0) + (data.created ?? 0));
+      } else {
+        setSeedMsg(data.error ?? 'Seeding failed.');
+      }
+    } catch {
+      setSeedMsg('Network error. Try again.');
+    } finally {
+      setSeedingBatches(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -174,9 +196,11 @@ export default function AdminDashboard() {
       apiFetch('/api/admin/teachers').then((r) => r.json()),
     ])
       .then(([batchData, studentData, teacherData]) => {
-        const activeBatches = (batchData.batches ?? []).filter(
+        const allBatches = batchData.batches ?? [];
+        const activeBatches = allBatches.filter(
           (b: { isActive?: boolean }) => b.isActive
         ).length;
+        setBatchCount(allBatches.length);
         const totalStudents = (studentData.students ?? []).length;
         const totalTeachers = (teacherData.teachers ?? []).length;
         setStats({
@@ -209,6 +233,49 @@ export default function AdminDashboard() {
         <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}
         </div>
+      )}
+
+      {/* Setup Checklist — shown only when something needs attention */}
+      {batchCount === 0 && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⚠️</span>
+            <h2 className="font-semibold text-amber-900 text-sm">First-time setup needed</h2>
+          </div>
+          <div className="space-y-2 text-sm text-amber-800">
+            <div className="flex items-start gap-3">
+              <span className={batchCount !== null && batchCount > 0 ? 'text-green-600' : 'text-amber-600'}>
+                {batchCount !== null && batchCount > 0 ? '✓' : '○'}
+              </span>
+              <div>
+                <p className="font-medium">Create batch bands (A, B, C, D)</p>
+                <p className="text-xs text-amber-700">Students need batches to select when they sign up.</p>
+                {batchCount === 0 && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button
+                      onClick={seedBatches}
+                      disabled={seedingBatches}
+                      className="text-xs bg-amber-700 text-white px-3 py-1 rounded-lg hover:bg-amber-800 disabled:opacity-50"
+                    >
+                      {seedingBatches ? 'Creating…' : 'Create Batches A–D'}
+                    </button>
+                    {seedMsg && <span className="text-xs text-amber-900">{seedMsg}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-amber-600">○</span>
+              <div>
+                <p className="font-medium">Generate class instances for this week</p>
+                <p className="text-xs text-amber-700">Go to Teacher &rarr; Classes &rarr; click &ldquo;Auto-Schedule&rdquo;. Meet links are pre-filled.</p>
+                <Link href="/teacher/classes" className="inline-block mt-1 text-xs bg-amber-700 text-white px-3 py-1 rounded-lg hover:bg-amber-800">
+                  Go to Teacher Classes
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {/* System Stats */}
