@@ -49,63 +49,54 @@ export async function GET(request: NextRequest) {
 
     let instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
 
-    if (auth.role === 'teacher') {
-      instances = instances.filter((i) => i.teacherId === auth.uid);
-    } else if (auth.role === 'student') {
-      // Use getDoc by UID — student profile doc ID always equals user UID
-      const studentProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, auth.uid);
-      const batchBandId = studentProfile?.currentBatchBandId as string | undefined;
-
-      if (!batchBandId) {
-        // No batch selected yet — return empty with a hint
-        return Response.json({ success: true, instances: [], noBatch: true });
-      }
-
-      // Filter by batchBandId first; also resolve code for fallback matching
-      const studentBand = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, batchBandId);
-      const studentBatchCode = studentBand?.code as string | undefined;
-
-      instances = instances.filter((i) => {
-        if (i.batchBandId === batchBandId) return true;
-        // Fallback: match by batch code if IDs differ (e.g. after re-seeding)
-        if (studentBatchCode) {
-          const instBand = i as unknown as Record<string, unknown>;
-          return (instBand.batchBand as string) === studentBatchCode;
-        }
-        return false;
-      });
-    }
-
-    // Permanent default Meet links per batch
-    // Batch A & B (Mon/Wed) → spv-exsq-sfm
-    // Batch C & D (Tue/Thu) → iyq-wdqw-cfj
     const DEFAULT_MEET_LINKS: Record<string, string> = {
-      'A': 'https://meet.google.com/spv-exsq-sfm',
-      'B': 'https://meet.google.com/spv-exsq-sfm',
-      'C': 'https://meet.google.com/iyq-wdqw-cfj',
-      'D': 'https://meet.google.com/iyq-wdqw-cfj',
+      A: 'https://meet.google.com/spv-exsq-sfm',
+      B: 'https://meet.google.com/spv-exsq-sfm',
+      C: 'https://meet.google.com/iyq-wdqw-cfj',
+      D: 'https://meet.google.com/iyq-wdqw-cfj',
     };
 
-    // Resolve batchBandId → batchBand code ('A'/'B'/'C'/'D') for display
-    const uniqueBatchIds = [...new Set(instances.map((i) => i.batchBandId).filter(Boolean))];
+    // Step 1: resolve ALL batchBandId → code BEFORE filtering (needed for fallback match)
+    const allBandIds = [...new Set(instances.map((i) => i.batchBandId).filter(Boolean))];
     const batchCodeMap: Record<string, string> = {};
-    for (const bandId of uniqueBatchIds) {
+    for (const bandId of allBandIds) {
       const band = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, bandId);
       if (band) batchCodeMap[bandId] = band.code as string;
     }
 
-    // Attach batchBand code and meetLink — use instance-specific link or batch default
+    // Step 2: role-based filtering
+    if (auth.role === 'teacher') {
+      instances = instances.filter((i) => i.teacherId === auth.uid);
+    } else if (auth.role === 'student') {
+      // getDoc by UID — student profile doc ID always equals user UID
+      const studentProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, auth.uid);
+      const batchBandId = (studentProfile?.currentBatchBandId as string) || '';
+
+      if (!batchBandId) {
+        return Response.json({ success: true, instances: [], noBatch: true });
+      }
+
+      // Resolve student's batch code (may not be in batchCodeMap if student has no instances yet)
+      const studentBatchCode = batchCodeMap[batchBandId]
+        || ((await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, batchBandId))?.code as string | undefined)
+        || '';
+
+      instances = instances.filter((i) => {
+        // Primary match: exact batchBandId
+        if (i.batchBandId === batchBandId) return true;
+        // Fallback: same batch code (handles re-seeded IDs)
+        if (studentBatchCode && batchCodeMap[i.batchBandId] === studentBatchCode) return true;
+        return false;
+      });
+    }
+
+    // Step 3: attach batch code + meet link to every instance
     instances = instances.map((i) => {
       const raw = i as unknown as Record<string, unknown>;
-      const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? i.batchBandId;
-      const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string);
+      const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? '';
+      const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string) || '';
       const link = instanceLink || DEFAULT_MEET_LINKS[code] || null;
-      return {
-        ...i,
-        batchBand: code,
-        meetLink: link,
-        googleMeetLink: link,
-      };
+      return { ...i, batchBand: code, meetLink: link, googleMeetLink: link };
     });
 
     return Response.json({ success: true, instances });
