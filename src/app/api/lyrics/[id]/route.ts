@@ -78,8 +78,8 @@ export async function PATCH(
       return Response.json({ error: 'Lyrics not found' }, { status: 404 });
     }
 
-    // Snapshot current version before applying changes
-    await snapshotLyricsVersion(id, existing, auth.uid, 'Manual edit');
+    // Snapshot current version (non-blocking — missing index won't fail the save)
+    snapshotLyricsVersion(id, existing, auth.uid, 'Manual edit').catch(() => {});
 
     const updates: Record<string, unknown> = {};
     if (parsed.data.title !== undefined) updates.title = parsed.data.title;
