@@ -77,16 +77,33 @@ export default function LyricsDetailPage() {
     if (!user) return;
     apiFetch(`/api/lyrics/${id}`)
       .then((r) => r.json())
-      .then((data: LyricsDetail) => {
-        setLyrics(data);
-        setTitle(data.title);
-        setRagam(data.ragam ?? '');
-        setTaalam(data.taalam ?? '');
-        setOriginalText(data.originalText ?? '');
-        setTransliteration(data.transliteration ?? '');
-        setTranslation(data.translation ?? '');
-        setMeaning(data.meaning ?? '');
-        setAttachedFiles(data.attachedFiles ?? []);
+      .then((data) => {
+        // API returns { lyrics: {...} } — unwrap and map Firestore field names to UI fields
+        const raw = data.lyrics ?? data;
+        const mapped: LyricsDetail = {
+          id: raw.id,
+          title: raw.title ?? '',
+          teachingUnitName: raw.teachingUnitName ?? '',
+          ragam: raw.ragam ?? '',
+          taalam: raw.taalam ?? '',
+          originalText: raw.sourceText ?? raw.originalText ?? '',
+          transliteration: raw.transliteration ?? '',
+          translation: raw.translations?.en?.text ?? raw.translation ?? '',
+          meaning: raw.meaning ?? '',
+          status: raw.verificationStatus === 'published' ? 'published' : 'draft',
+          versionCount: raw.versionCount ?? 0,
+          updatedAt: raw.updatedAt ?? '',
+          attachedFiles: raw.attachedFiles ?? [],
+        };
+        setLyrics(mapped);
+        setTitle(mapped.title);
+        setRagam(mapped.ragam);
+        setTaalam(mapped.taalam);
+        setOriginalText(mapped.originalText);
+        setTransliteration(mapped.transliteration);
+        setTranslation(mapped.translation);
+        setMeaning(mapped.meaning);
+        setAttachedFiles(mapped.attachedFiles ?? []);
       })
       .catch((err) => setError(err.message ?? 'Failed to load lyrics.'))
       .finally(() => setLoading(false));
@@ -108,8 +125,8 @@ export default function LyricsDetailPage() {
         body: JSON.stringify({ title, ragam, taalam, originalText, transliteration, translation, meaning }),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
-      const updated: LyricsDetail = await res.json();
-      setLyrics(updated);
+      // PATCH returns { success, id } — update state from current form values
+      setLyrics((prev) => prev ? { ...prev, title, ragam, taalam, originalText, transliteration, translation, meaning } : prev);
       flash('Lyrics saved.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save lyrics.');
