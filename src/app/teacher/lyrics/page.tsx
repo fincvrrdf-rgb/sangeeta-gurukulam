@@ -11,11 +11,18 @@ import { STORAGE_PATHS } from '@/domain/constants';
 type LyricsStatus = 'draft' | 'published';
 type FilterValue = 'all' | LyricsStatus;
 
+interface AttachedFile {
+  storageRef: string;
+  mimeType: string;
+  name: string;
+}
+
 interface LyricsItem {
   id: string;
   title: string;
   status: LyricsStatus;
   updatedAt: string;
+  firstFile?: AttachedFile;
 }
 
 const FILTERS: { label: string; value: FilterValue }[] = [
@@ -48,12 +55,16 @@ export default function LyricsListPage() {
       .then((r) => r.json())
       .then((data) => {
         const raw: Record<string, unknown>[] = Array.isArray(data) ? data : data.lyrics ?? [];
-        setLyrics(raw.map((l) => ({
-          id: l.id as string,
-          title: (l.title as string) ?? '(Untitled)',
-          status: l.verificationStatus === 'published' ? 'published' : 'draft',
-          updatedAt: (l.updatedAt as string) ?? (l.createdAt as string) ?? '',
-        })));
+        setLyrics(raw.map((l) => {
+          const files = (l.attachedFiles as AttachedFile[] | undefined) ?? [];
+          return {
+            id: l.id as string,
+            title: (l.title as string) ?? '(Untitled)',
+            status: l.verificationStatus === 'published' ? 'published' : 'draft',
+            updatedAt: (l.updatedAt as string) ?? (l.createdAt as string) ?? '',
+            firstFile: files[0],
+          };
+        }));
       })
       .catch(() => setError('Failed to load lyrics.'))
       .finally(() => setLoading(false));
@@ -190,6 +201,17 @@ export default function LyricsListPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {item.firstFile && (
+                  <a
+                    href={item.firstFile.storageRef}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary text-xs"
+                    title={item.firstFile.name}
+                  >
+                    {item.firstFile.mimeType === 'application/pdf' ? '📄' : '🖼️'} View
+                  </a>
+                )}
                 <Link href={`/teacher/lyrics/${item.id}`} className="btn-secondary text-xs">Edit</Link>
                 <button onClick={() => handleDelete(item.id)} disabled={deleting === item.id}
                   className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50">
