@@ -18,6 +18,7 @@ interface LyricsItem {
   taalam?: string;
   composer?: string;
   language?: string;
+  hasFile?: boolean;
 }
 
 function SkeletonItem() {
@@ -74,7 +75,18 @@ export default function LyricsListPage() {
         if (!r.ok) throw new Error(`Failed to load lyrics (${r.status})`);
         return r.json();
       })
-      .then((data) => setLyrics(Array.isArray(data) ? data : data.lyrics ?? []))
+      .then((data) => {
+        const raw: Record<string, unknown>[] = Array.isArray(data) ? data : data.lyrics ?? [];
+        setLyrics(raw.map((l) => ({
+          id: l.id as string,
+          title: (l.title as string) ?? '',
+          ragam: (l.ragam as string) ?? '',
+          taalam: l.taalam as string | undefined,
+          composer: l.composer as string | undefined,
+          language: l.originalLanguage as string | undefined,
+          hasFile: Array.isArray(l.attachedFiles) && (l.attachedFiles as unknown[]).length > 0,
+        })));
+      })
       .catch((err) => setError(err.message ?? 'Could not load lyrics.'))
       .finally(() => setLoading(false));
   }, [user, apiFetch]);
@@ -234,9 +246,12 @@ export default function LyricsListPage() {
                           )}
                         </div>
                       </div>
-                      <span className="text-saffron-400 group-hover:text-saffron-600 flex-shrink-0 text-sm">
-                        &#x2192;
-                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {item.hasFile && (
+                          <span className="text-xs text-gray-400" title="Sheet attached">📄</span>
+                        )}
+                        <span className="text-saffron-400 group-hover:text-saffron-600 text-sm">&#x2192;</span>
+                      </div>
                     </Link>
                   </li>
                 ))}
