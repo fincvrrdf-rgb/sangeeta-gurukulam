@@ -82,7 +82,7 @@ export default function JoinClassPage() {
     const diffStart = (start.getTime() - nowIST.getTime()) / 60000; // mins until start
     if (instance.status === 'cancelled') return 'cancelled';
     if (instance.status === 'completed' || end < nowIST) return 'ended';
-    if (diffStart <= 15) return 'joinable'; // within 15 min before or after start
+    if (diffStart <= 15) return 'live'; // within 15 min of start = Live Now
     return 'upcoming';
   }
 
@@ -117,7 +117,7 @@ export default function JoinClassPage() {
       <div>
         <h1 className="section-title">My Classes</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          Upcoming classes for your batch — next 14 days. Join within 15 min of start time.
+          Upcoming classes for your batch — next 14 days.
         </p>
       </div>
 
@@ -190,40 +190,29 @@ export default function JoinClassPage() {
                       </p>
                     </div>
                     <span className={`badge flex-shrink-0 ${
-                      joinStatus === 'joinable' ? 'badge-success' :
+                      joinStatus === 'live' ? 'badge-success' :
                       joinStatus === 'upcoming' ? 'badge-info' :
                       joinStatus === 'cancelled' ? 'badge-error' : 'badge-neutral'
                     }`}>
-                      {joinStatus === 'joinable' ? 'Live Now' :
+                      {joinStatus === 'live' ? 'Live Now' :
                        joinStatus === 'cancelled' ? 'Cancelled' :
                        joinStatus === 'ended' ? 'Ended' : 'Upcoming'}
                     </span>
                   </div>
 
-                  {isToday && joinStatus !== 'cancelled' && joinStatus !== 'ended' && (
+                  {joinStatus !== 'cancelled' && joinStatus !== 'ended' && link && (
                     <div className="mt-3">
-                      {link ? (
-                        <button
-                          onClick={() => handleJoin(instance, link)}
-                          disabled={joinStatus !== 'joinable'}
-                          className={`btn-primary w-full text-center ${
-                            joinStatus !== 'joinable' ? 'opacity-60 cursor-not-allowed' : ''
-                          }`}
-                        >
-                          {joinStatus === 'joinable' ? 'Join Google Meet' : 'Opens at class time'}
-                        </button>
-                      ) : (
-                        <div className="btn-secondary w-full text-center opacity-60 cursor-not-allowed text-sm">
-                          Meet link not yet available
-                        </div>
-                      )}
+                      <button
+                        onClick={() => handleJoin(instance, link)}
+                        className="btn-primary w-full text-center"
+                      >
+                        {joinStatus === 'live' ? '🔴 Join Live — Google Meet' : 'Join Google Meet'}
+                      </button>
                     </div>
                   )}
 
-                  {!isToday && link && (
-                    <p className="text-xs text-teal-600 mt-2">
-                      Meet link ready — join on the day of class
-                    </p>
+                  {joinStatus !== 'cancelled' && joinStatus !== 'ended' && !link && (
+                    <p className="text-xs text-gray-400 mt-2">Meet link not yet available</p>
                   )}
                 </div>
               );
