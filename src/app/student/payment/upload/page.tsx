@@ -108,13 +108,13 @@ export default function UploadPaymentPage() {
       setStage('saving');
       const res = await apiFetch('/api/payment/proof', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cycleMonth,
-          fileUrl: downloadURL,
+          storagePath: storageRef.fullPath,
           fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          paymentType,
+          mimeType: file.type,
+          fileSizeBytes: file.size,
         }),
       });
 

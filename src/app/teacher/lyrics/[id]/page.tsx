@@ -78,7 +78,7 @@ export default function LyricsDetailPage() {
     apiFetch(`/api/lyrics/${id}`)
       .then((r) => r.json())
       .then((data) => {
-        // API returns { lyrics: {...} } — unwrap and map field names
+        // API returns { lyrics: {...} } — unwrap and map Firestore field names to UI fields
         const raw = data.lyrics ?? data;
         const mapped: LyricsDetail = {
           id: raw.id,
@@ -125,8 +125,8 @@ export default function LyricsDetailPage() {
         body: JSON.stringify({ title, ragam, taalam, originalText, transliteration, translation, meaning }),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
-      const updated: LyricsDetail = await res.json();
-      setLyrics(updated);
+      // PATCH returns { success, id } — update state from current form values
+      setLyrics((prev) => prev ? { ...prev, title, ragam, taalam, originalText, transliteration, translation, meaning } : prev);
       flash('Lyrics saved.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save lyrics.');

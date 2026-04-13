@@ -68,7 +68,16 @@ export default function LyricsListPage() {
     if (!user) return;
     apiFetch('/api/lyrics')
       .then((r) => r.json())
-      .then((data) => setLyrics(Array.isArray(data) ? data : data.lyrics ?? []))
+      .then((data) => {
+        const raw: Record<string, unknown>[] = Array.isArray(data) ? data : data.lyrics ?? [];
+        setLyrics(raw.map((l) => ({
+          id: l.id as string,
+          title: (l.title as string) ?? '',
+          teachingUnitName: '',
+          status: l.verificationStatus === 'published' ? 'published' : 'draft',
+          updatedAt: (l.updatedAt as string) ?? (l.createdAt as string) ?? '',
+        })));
+      })
       .catch((err) => setError(err.message ?? 'Failed to load lyrics.'))
       .finally(() => setLoading(false));
   }, [user, apiFetch]);

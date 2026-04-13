@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       userAgent,
     });
 
-    return Response.json({ success: true, lyricsId }, { status: 201 });
+    return Response.json({ success: true, id: lyricsId }, { status: 201 });
   } catch (error) {
     return authErrorResponse(error);
   }

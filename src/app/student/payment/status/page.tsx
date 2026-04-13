@@ -108,7 +108,7 @@ export default function PaymentStatusPage() {
 
   useEffect(() => {
     if (!user) return;
-    apiFetch('/api/payment/proof')
+    apiFetch('/api/payment/status')
       .then((r) => {
         if (!r.ok) throw new Error(`Failed to load payment data (${r.status})`);
         return r.json();
