@@ -11,6 +11,14 @@ import { STORAGE_PATHS } from '@/domain/constants';
 type LyricsStatus = 'draft' | 'published';
 type FilterValue = 'all' | LyricsStatus;
 
+const STOTRAM_LINKS = [
+  { title: 'Ganesha Pancharatnam',        url: 'https://greenmesg.org/stotrams/ganesha_pancharatnam.php',       deity: 'Ganesha' },
+  { title: 'Shiva Panchakshara Stotram',  url: 'https://greenmesg.org/stotrams/shiva_panchakshara_stotram.php', deity: 'Shiva' },
+  { title: 'Suryashtakam',                url: 'https://greenmesg.org/stotrams/suryashtakam.php',               deity: 'Surya' },
+  { title: 'Mahishasura Mardini Stotram', url: 'https://greenmesg.org/stotrams/mahishasura_mardini_stotram.php',deity: 'Devi' },
+  { title: 'Durga Saptashloki',           url: 'https://greenmesg.org/stotrams/durga_saptashloki.php',          deity: 'Durga' },
+];
+
 interface AttachedFile {
   storageRef: string;
   mimeType: string;
@@ -173,6 +181,27 @@ export default function LyricsListPage() {
           </button>
         ))}
       </div>
+
+      {/* Stotrams & Bhajans — reference links */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Stotrams &amp; Bhajans</h2>
+        <div className="card p-0 overflow-hidden">
+          <ul className="divide-y divide-gray-100">
+            {STOTRAM_LINKS.map((item) => (
+              <li key={item.url}>
+                <a href={item.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-saffron-50 transition-colors">
+                  <div>
+                    <p className="text-sm font-medium text-charcoal">{item.title}</p>
+                    <p className="text-xs text-gray-400">{item.deity}</p>
+                  </div>
+                  <span className="text-xs text-saffron-600 flex-shrink-0">greenmesg.org ↗</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
 
       {loading ? (
         <div className="space-y-3">
