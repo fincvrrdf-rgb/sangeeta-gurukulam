@@ -16,6 +16,9 @@ const UpdateInstanceSchema = z.object({
   meetLink: z.string().min(1).optional(),
   status: z.enum(['scheduled', 'live', 'completed', 'cancelled']).optional(),
   notes: z.string().optional(),
+  // Time reschedule — ISO datetime strings e.g. "2024-01-15T05:30:00+05:30"
+  scheduledStartTime: z.string().optional(),
+  scheduledEndTime: z.string().optional(),
 });
 
 export async function PATCH(
@@ -50,6 +53,8 @@ export async function PATCH(
     }
     if (parsed.data.status !== undefined) updates.status = parsed.data.status;
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+    if (parsed.data.scheduledStartTime !== undefined) updates.scheduledStartTime = parsed.data.scheduledStartTime;
+    if (parsed.data.scheduledEndTime !== undefined) updates.scheduledEndTime = parsed.data.scheduledEndTime;
 
     await updateDoc(COLLECTIONS.CLASS_INSTANCES, instanceId, updates);
 
