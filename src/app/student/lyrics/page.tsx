@@ -18,7 +18,8 @@ interface LyricsItem {
   taalam?: string;
   composer?: string;
   language?: string;
-  hasFile?: boolean;
+  fileUrl?: string;
+  fileMimeType?: string;
 }
 
 function SkeletonItem() {
@@ -84,7 +85,10 @@ export default function LyricsListPage() {
           taalam: l.taalam as string | undefined,
           composer: l.composer as string | undefined,
           language: l.originalLanguage as string | undefined,
-          hasFile: Array.isArray(l.attachedFiles) && (l.attachedFiles as unknown[]).length > 0,
+          fileUrl: (Array.isArray(l.attachedFiles) && (l.attachedFiles as Array<{storageRef:string;mimeType:string}>).length > 0)
+            ? (l.attachedFiles as Array<{storageRef:string;mimeType:string}>)[0].storageRef : undefined,
+          fileMimeType: (Array.isArray(l.attachedFiles) && (l.attachedFiles as Array<{mimeType:string}>).length > 0)
+            ? (l.attachedFiles as Array<{mimeType:string}>)[0].mimeType : undefined,
         })));
       })
       .catch((err) => setError(err.message ?? 'Could not load lyrics.'))
@@ -247,10 +251,17 @@ export default function LyricsListPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {item.hasFile && (
-                          <span className="text-xs text-gray-400" title="Sheet attached">📄</span>
+                        {item.fileUrl && (
+                          <a
+                            href={item.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-secondary text-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {item.fileMimeType === 'application/pdf' ? '📄' : '🖼️'} View
+                          </a>
                         )}
-                        <span className="text-saffron-400 group-hover:text-saffron-600 text-sm">&#x2192;</span>
                       </div>
                     </Link>
                   </li>
