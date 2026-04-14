@@ -37,27 +37,27 @@ function SkeletonItem() {
 const STOTRAM_LINKS = [
   {
     title: 'Ganesha Pancharatnam',
-    url: 'https://greenmesg.org/stotrams/ganesha_pancharatnam.php',
+    url: 'https://greenmesg.org/stotrams/ganesha-pancharatnam.php',
     deity: 'Ganesha',
   },
   {
     title: 'Shiva Panchakshara Stotram',
-    url: 'https://greenmesg.org/stotrams/shiva_panchakshara_stotram.php',
+    url: 'https://greenmesg.org/stotrams/shiva-panchakshara-stotram.php',
     deity: 'Shiva',
   },
   {
     title: 'Suryashtakam',
-    url: 'https://greenmesg.org/stotrams/suryashtakam.php',
+    url: 'https://greenmesg.org/stotrams/suryaashtakam.php',
     deity: 'Surya',
   },
   {
     title: 'Mahishasura Mardini Stotram',
-    url: 'https://greenmesg.org/stotrams/mahishasura_mardini_stotram.php',
+    url: 'https://greenmesg.org/stotrams/mahishasura-mardini-stotram.php',
     deity: 'Devi',
   },
   {
     title: 'Durga Saptashloki',
-    url: 'https://greenmesg.org/stotrams/durga_saptashloki.php',
+    url: 'https://greenmesg.org/stotrams/durga-saptashloki.php',
     deity: 'Durga',
   },
 ];

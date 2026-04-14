@@ -12,11 +12,11 @@ type LyricsStatus = 'draft' | 'published';
 type FilterValue = 'all' | LyricsStatus;
 
 const STOTRAM_LINKS = [
-  { title: 'Ganesha Pancharatnam',        url: 'https://greenmesg.org/stotrams/ganesha_pancharatnam.php',       deity: 'Ganesha' },
-  { title: 'Shiva Panchakshara Stotram',  url: 'https://greenmesg.org/stotrams/shiva_panchakshara_stotram.php', deity: 'Shiva' },
-  { title: 'Suryashtakam',                url: 'https://greenmesg.org/stotrams/suryashtakam.php',               deity: 'Surya' },
-  { title: 'Mahishasura Mardini Stotram', url: 'https://greenmesg.org/stotrams/mahishasura_mardini_stotram.php',deity: 'Devi' },
-  { title: 'Durga Saptashloki',           url: 'https://greenmesg.org/stotrams/durga_saptashloki.php',          deity: 'Durga' },
+  { title: 'Ganesha Pancharatnam',        url: 'https://greenmesg.org/stotrams/ganesha-pancharatnam.php',        deity: 'Ganesha' },
+  { title: 'Shiva Panchakshara Stotram',  url: 'https://greenmesg.org/stotrams/shiva-panchakshara-stotram.php',  deity: 'Shiva' },
+  { title: 'Suryashtakam',                url: 'https://greenmesg.org/stotrams/suryaashtakam.php',                deity: 'Surya' },
+  { title: 'Mahishasura Mardini Stotram', url: 'https://greenmesg.org/stotrams/mahishasura-mardini-stotram.php', deity: 'Devi' },
+  { title: 'Durga Saptashloki',           url: 'https://greenmesg.org/stotrams/durga-saptashloki.php',           deity: 'Durga' },
 ];
 
 interface AttachedFile {
