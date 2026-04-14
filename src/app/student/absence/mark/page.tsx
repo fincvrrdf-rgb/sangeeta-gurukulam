@@ -16,6 +16,7 @@ interface ClassInstance {
   scheduledEndTime?: string;
   batchBand?: string;
   batchBandId?: string;
+  status?: string;
 }
 
 type SubmitState = 'idle' | 'loading' | 'success' | 'error';
@@ -42,11 +43,22 @@ export default function MarkAbsencePage() {
 
   useEffect(() => {
     if (!user) return;
-    apiFetch('/api/class?upcoming=true')
+    // Use the same date-range endpoint used by Join Class — avoids composite index issues
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+      .toISOString().slice(0, 10);
+    const in14 = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    in14.setDate(in14.getDate() + 14);
+    const to = in14.toISOString().slice(0, 10);
+
+    apiFetch(`/api/classes/instances?from=${today}&to=${to}`)
       .then((r) => r.json())
       .then((data) => {
-        const list: ClassInstance[] = Array.isArray(data) ? data : data.classes ?? data.instances ?? [];
-        setClasses(list.filter((c) => c.scheduledStartTime));
+        const list: ClassInstance[] = data.instances ?? [];
+        // Only show scheduled (not cancelled/completed) future instances
+        const now = new Date();
+        setClasses(
+          list.filter((c) => c.scheduledStartTime && c.status === 'scheduled' && new Date(c.scheduledStartTime) > now)
+        );
       })
       .catch(() => setClassError('Could not load upcoming classes.'))
       .finally(() => setLoadingClasses(false));

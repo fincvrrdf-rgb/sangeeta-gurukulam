@@ -99,6 +99,12 @@ export async function PATCH(
     if (parsed.data.appendAttachedFile) {
       const current = (existing.attachedFiles ?? []) as unknown[];
       updates.attachedFiles = [...current, parsed.data.appendAttachedFile];
+      // Auto-publish so students can see the file immediately
+      if (existing.verificationStatus !== 'published') {
+        updates.verificationStatus = 'published';
+        updates.publishedAt = nowISO();
+        updates.publishedBy = auth.uid;
+      }
     }
     if (parsed.data.removeAttachedFile) {
       const current = (existing.attachedFiles ?? []) as Array<{ storageRef: string }>;
