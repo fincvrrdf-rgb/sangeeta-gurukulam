@@ -132,6 +132,20 @@ export default function LyricsListPage() {
     }
   }
 
+  const [publishing, setPublishing] = useState<string | null>(null);
+
+  async function handlePublish(id: string) {
+    setPublishing(id);
+    try {
+      await apiFetch(`/api/lyrics/${id}/publish`, { method: 'POST' });
+      setLyrics((prev) => prev.map((l) => l.id === id ? { ...l, status: 'published' } : l));
+    } catch {
+      setError('Failed to publish.');
+    } finally {
+      setPublishing(null);
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Delete this lyrics entry?')) return;
     setDeleting(id);
@@ -243,6 +257,12 @@ export default function LyricsListPage() {
                   >
                     {item.firstFile.mimeType === 'application/pdf' ? '📄' : '🖼️'} View
                   </a>
+                )}
+                {item.status === 'draft' && (
+                  <button onClick={() => handlePublish(item.id)} disabled={publishing === item.id}
+                    className="btn-primary text-xs disabled:opacity-50">
+                    {publishing === item.id ? '…' : 'Publish'}
+                  </button>
                 )}
                 <Link href={`/teacher/lyrics/${item.id}`} className="btn-secondary text-xs">Edit</Link>
                 <button onClick={() => handleDelete(item.id)} disabled={deleting === item.id}
