@@ -8,7 +8,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface LyricsItem {
@@ -64,6 +64,7 @@ const STOTRAM_LINKS = [
 
 export default function LyricsListPage() {
   const { user, apiFetch } = useAuthContext();
+  const router = useRouter();
   const [lyrics, setLyrics] = useState<LyricsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,10 +223,11 @@ export default function LyricsListPage() {
             <div className="card p-0 overflow-hidden">
               <ul className="divide-y divide-gray-100">
                 {items.map((item) => (
-                  <li key={item.id} className="flex items-center hover:bg-saffron-50 transition-colors">
-                    <Link
-                      href={`/student/lyrics/${item.id}`}
-                      className="flex-1 min-w-0 px-4 py-3.5"
+                  <li key={item.id} className="flex items-center gap-2 px-4 py-3.5 hover:bg-saffron-50 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/student/lyrics/${item.id}`)}
+                      className="flex-1 min-w-0 text-left"
                     >
                       <p className="text-sm font-medium text-charcoal truncate">{item.title}</p>
                       <div className="flex flex-wrap gap-1.5 mt-1">
@@ -239,13 +241,13 @@ export default function LyricsListPage() {
                           <span className="text-xs text-gray-400">{item.composer}</span>
                         )}
                       </div>
-                    </Link>
+                    </button>
                     {item.fileUrl && (
                       <a
                         href={item.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="btn-secondary text-xs mr-4 flex-shrink-0"
+                        className="btn-secondary text-xs flex-shrink-0"
                       >
                         {item.fileMimeType === 'application/pdf' ? '📄' : '🖼️'} View
                       </a>
