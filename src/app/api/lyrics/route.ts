@@ -31,20 +31,21 @@ export async function GET(request: NextRequest) {
 
     const isTeacherOrAdmin = auth.role === 'teacher' || auth.role === 'super_admin';
 
+    // Avoid composite index requirements by filtering/sorting in memory
     const constraints = isTeacherOrAdmin
-      ? [
-          { type: 'orderBy' as const, field: 'createdAt', direction: 'desc' as const },
-          { type: 'limit' as const, value: 50 },
-        ]
-      : [
-          { type: 'where' as const, field: 'verificationStatus', op: '==' as const, value: 'published' },
-          { type: 'orderBy' as const, field: 'createdAt', direction: 'desc' as const },
-          { type: 'limit' as const, value: 50 },
-        ];
+      ? [{ type: 'limit' as const, value: 100 }]
+      : [{ type: 'where' as const, field: 'verificationStatus', op: '==' as const, value: 'published' }];
 
     const lyrics = await queryDocs<Lyrics>(COLLECTIONS.LYRICS, constraints);
 
-    return Response.json({ lyrics });
+    // Sort by createdAt descending in memory (no composite index needed)
+    lyrics.sort((a, b) => {
+      const ta = (a as unknown as Record<string, string>).createdAt ?? '';
+      const tb = (b as unknown as Record<string, string>).createdAt ?? '';
+      return tb.localeCompare(ta);
+    });
+
+    return Response.json({ lyrics: lyrics.slice(0, 50) });
   } catch (error) {
     return authErrorResponse(error);
   }
