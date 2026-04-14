@@ -222,48 +222,34 @@ export default function LyricsListPage() {
             <div className="card p-0 overflow-hidden">
               <ul className="divide-y divide-gray-100">
                 {items.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.id} className="flex items-center hover:bg-saffron-50 transition-colors">
                     <Link
                       href={`/student/lyrics/${item.id}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3.5
-                                 hover:bg-saffron-50 transition-colors group"
+                      className="flex-1 min-w-0 px-4 py-3.5"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-charcoal group-hover:text-saffron-800 truncate">
-                          {item.title}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {item.taalam && (
-                            <span className="badge badge-info text-xs">
-                              {item.taalam}
-                            </span>
-                          )}
-                          {item.language && (
-                            <span className="badge badge-neutral text-xs">
-                              {item.language}
-                            </span>
-                          )}
-                          {item.composer && (
-                            <span className="text-xs text-gray-400">
-                              {item.composer}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {item.fileUrl && (
-                          <a
-                            href={item.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-secondary text-xs"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {item.fileMimeType === 'application/pdf' ? '📄' : '🖼️'} View
-                          </a>
+                      <p className="text-sm font-medium text-charcoal truncate">{item.title}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {item.taalam && (
+                          <span className="badge badge-info text-xs">{item.taalam}</span>
+                        )}
+                        {item.language && (
+                          <span className="badge badge-neutral text-xs">{item.language}</span>
+                        )}
+                        {item.composer && (
+                          <span className="text-xs text-gray-400">{item.composer}</span>
                         )}
                       </div>
                     </Link>
+                    {item.fileUrl && (
+                      <a
+                        href={item.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-secondary text-xs mr-4 flex-shrink-0"
+                      >
+                        {item.fileMimeType === 'application/pdf' ? '📄' : '🖼️'} View
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
