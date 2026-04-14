@@ -265,7 +265,7 @@ export default function LyricsViewerPage() {
                       rel="noopener noreferrer"
                       className="btn-secondary text-xs px-3 py-1.5 flex-shrink-0"
                     >
-                      &#x2B73; Download
+                      {file.mimeType === 'application/pdf' ? '📄' : '🖼️'} View
                     </a>
                   </li>
                 ))}
