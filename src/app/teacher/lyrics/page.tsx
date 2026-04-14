@@ -122,6 +122,9 @@ export default function LyricsListPage() {
         }),
       });
 
+      // 4. Auto-publish so students can see it immediately
+      await apiFetch(`/api/lyrics/${id}/publish`, { method: 'POST' }).catch(() => {});
+
       router.push(`/teacher/lyrics/${id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Upload failed.');

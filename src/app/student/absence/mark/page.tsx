@@ -12,19 +12,20 @@ import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface ClassInstance {
   id: string;
-  title: string;
-  scheduledAt: string; // ISO
+  scheduledStartTime: string; // ISO
+  scheduledEndTime?: string;
+  batchBand?: string;
+  batchBandId?: string;
 }
 
 type SubmitState = 'idle' | 'loading' | 'success' | 'error';
 
 function formatClassOption(cls: ClassInstance) {
-  const d = new Date(cls.scheduledAt);
-  return `${cls.title} — ${d.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })} at ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+  const d = new Date(cls.scheduledStartTime);
+  const dateStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  const batch = cls.batchBand ? `Batch ${cls.batchBand}` : '';
+  return `${dateStr} at ${timeStr} IST${batch ? ' — ' + batch : ''}`;
 }
 
 export default function MarkAbsencePage() {
@@ -43,7 +44,10 @@ export default function MarkAbsencePage() {
     if (!user) return;
     apiFetch('/api/class?upcoming=true')
       .then((r) => r.json())
-      .then((data) => setClasses(Array.isArray(data) ? data : data.classes ?? []))
+      .then((data) => {
+        const list: ClassInstance[] = Array.isArray(data) ? data : data.classes ?? data.instances ?? [];
+        setClasses(list.filter((c) => c.scheduledStartTime));
+      })
       .catch(() => setClassError('Could not load upcoming classes.'))
       .finally(() => setLoadingClasses(false));
   }, [user, apiFetch]);
@@ -58,6 +62,7 @@ export default function MarkAbsencePage() {
     try {
       const res = await apiFetch('/api/absence/standard', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ classInstanceId: selectedClass, reason: reason.trim() }),
       });
 
