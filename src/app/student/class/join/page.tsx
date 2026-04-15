@@ -21,17 +21,18 @@ interface ClassInstance {
   batchBand?: string;
 }
 
-function todayIST(): string {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-    .toISOString()
-    .slice(0, 10);
+// Use Intl.DateTimeFormat so the IST calendar date is correct for any viewer timezone.
+// new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }) re-parses an IST
+// string as local time, giving a wrong epoch for anyone outside IST.
+function istDateOffset(days: number): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date(Date.now() + days * 86400000));
 }
 
-function plusDaysIST(days: number): string {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+function todayIST(): string { return istDateOffset(0); }
+function plusDaysIST(days: number): string { return istDateOffset(days); }
 
 function formatDate(isoDate: string): string {
   const d = new Date(isoDate + 'T00:00:00');
@@ -74,15 +75,18 @@ export default function JoinClassPage() {
       .finally(() => setLoading(false));
   }, [apiFetch]);
 
-  const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-
+  // Timezone-safe: scheduledStartTime is offset-aware (e.g. 2026-04-16T07:30:00+05:30).
+  // new Date(iso).getTime() gives the correct UTC epoch on any device.
+  // Do NOT use new Date(...toLocaleString) — that re-parses IST as local time, shifting the epoch.
   function getJoinStatus(instance: ClassInstance) {
-    const start = new Date(instance.scheduledStartTime);
-    const end = new Date(instance.scheduledEndTime);
-    const diffStart = (start.getTime() - nowIST.getTime()) / 60000; // mins until start
+    const now = Date.now();
+    const start = new Date(instance.scheduledStartTime).getTime();
+    const end = new Date(instance.scheduledEndTime).getTime();
+    const minsUntilStart = (start - now) / 60000;
     if (instance.status === 'cancelled') return 'cancelled';
-    if (instance.status === 'completed' || end < nowIST) return 'ended';
-    if (diffStart <= 15) return 'live'; // within 15 min of start = Live Now
+    if (instance.status === 'completed' || end < now) return 'ended';
+    // Live: from 15 min before start through the entire session
+    if (minsUntilStart <= 15) return 'live';
     return 'upcoming';
   }
 

@@ -9,6 +9,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
 type InstanceStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
@@ -30,15 +31,15 @@ interface ClassSlot {
   id: string;
 }
 
-function todayIST(): string {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toISOString().slice(0, 10);
+function istDateOffset(days: number): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date(Date.now() + days * 86400000));
 }
 
-function in14DaysIST(): string {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  d.setDate(d.getDate() + 14);
-  return d.toISOString().slice(0, 10);
-}
+function todayIST(): string { return istDateOffset(0); }
+function in14DaysIST(): string { return istDateOffset(14); }
 
 function formatDay(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
@@ -381,29 +382,40 @@ export default function ManageClassesPage() {
                     )}
                   </div>
 
-                  {/* Actions — only for active classes */}
-                  {inst.status !== 'cancelled' && inst.status !== 'completed' && (
+                  {/* Actions */}
+                  {inst.status !== 'cancelled' && (
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => editingId === inst.id ? setEditingId(null) : startEditing(inst)}
-                        className="text-xs text-saffron-600 hover:text-saffron-800 font-medium"
+                      {/* Attendance: available for active AND completed classes */}
+                      <Link
+                        href={`/teacher/classes/${inst.id}/attendance`}
+                        className="text-xs text-teal-600 hover:text-teal-800 font-medium"
                       >
-                        {editingId === inst.id ? 'Close' : 'Edit time'}
-                      </button>
-                      <button
-                        onClick={() => handleCancel(inst.id)}
-                        disabled={cancellingId === inst.id}
-                        className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
-                      >
-                        {cancellingId === inst.id ? '…' : 'Cancel'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(inst.id)}
-                        disabled={deletingId === inst.id}
-                        className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                      >
-                        {deletingId === inst.id ? '…' : 'Delete'}
-                      </button>
+                        Attendance
+                      </Link>
+                      {inst.status !== 'completed' && (
+                        <>
+                          <button
+                            onClick={() => editingId === inst.id ? setEditingId(null) : startEditing(inst)}
+                            className="text-xs text-saffron-600 hover:text-saffron-800 font-medium"
+                          >
+                            {editingId === inst.id ? 'Close' : 'Edit time'}
+                          </button>
+                          <button
+                            onClick={() => handleCancel(inst.id)}
+                            disabled={cancellingId === inst.id}
+                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
+                          >
+                            {cancellingId === inst.id ? '…' : 'Cancel'}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(inst.id)}
+                            disabled={deletingId === inst.id}
+                            className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                          >
+                            {deletingId === inst.id ? '…' : 'Delete'}
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

@@ -43,9 +43,11 @@ export async function GET(
       return {
         bookingId:      b.id as string,
         studentId:      b.studentId as string,
-        studentName:    (profile?.displayName as string) ?? (profile?.name as string) ?? 'Unknown',
-        violationCount: (profile?.consecutiveViolations as number) ?? 0,
+        studentName:    (profile?.displayName as string) ?? (profile?.fullName as string) ?? (profile?.name as string) ?? 'Unknown',
+        violationCount: (profile?.consecutiveViolations as number) ?? (profile?.consecutiveViolationCount as number) ?? 0,
         status:         b.status ?? 'booked',
+        // Dependent support: if a student has a child joining with them, surface the child's name
+        dependentName:  (profile?.dependentName as string) ?? null,
       };
     });
 

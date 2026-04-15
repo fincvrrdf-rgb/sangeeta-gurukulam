@@ -64,16 +64,32 @@ export async function GET(request: NextRequest) {
   }
 }
 
-const MarkAttendanceSchema = z.object({
+// Single record — canonical statuses used internally
+const SingleAttendanceSchema = z.object({
   studentId: z.string().min(1),
   classInstanceId: z.string().min(1),
+  // Accept both UI-friendly aliases (present, did_not_show) and canonical values
   status: z.enum([
-    'attended', 'late', 'absent', 'notified_absence', 'no_show',
-    'teacher_cancelled', 'rescheduled', 'long_approved_absence',
+    'present', 'attended', 'late', 'absent', 'did_not_show', 'no_show',
+    'notified_absence', 'teacher_cancelled', 'rescheduled', 'long_approved_absence',
   ]),
   lateByMinutes: z.number().min(0).default(0),
   notes: z.string().default(''),
+  bookingId: z.string().optional(),
 });
+
+// Batch form — what the teacher attendance page sends
+const BatchAttendanceSchema = z.object({
+  records: z.array(SingleAttendanceSchema).min(1),
+});
+
+const MarkAttendanceSchema = z.union([SingleAttendanceSchema, BatchAttendanceSchema]);
+
+// UI status aliases → canonical AttendanceStatus enum values
+const STATUS_ALIASES: Record<string, AttendanceStatus> = {
+  present: 'attended',
+  did_not_show: 'no_show',
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,9 +101,25 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { studentId, classInstanceId, status, lateByMinutes, notes } = parsed.data;
+    // Normalize: both single and batch shapes are processed the same way
+    type ParsedData = typeof parsed.data;
+    type BatchData = { records: Array<{ studentId: string; classInstanceId: string; status: string; lateByMinutes: number; notes: string; bookingId?: string }> };
+    const isBatch = 'records' in parsed.data;
+    const records = isBatch
+      ? (parsed.data as unknown as BatchData).records
+      : [parsed.data as Exclude<ParsedData, BatchData>];
 
-    // Load class instance and settings
+    const { ipAddress, userAgent } = extractRequestMeta(request);
+    const results: Array<{
+      attendanceId: string;
+      studentId: string;
+      isViolation: boolean;
+      consecutiveCount: number;
+      compulsoryTriggered: boolean;
+    }> = [];
+
+    // We load classInstance and settings once — all records in a batch are for the same class
+    const classInstanceId = records[0].classInstanceId;
     const [classInstance, settings] = await Promise.all([
       getDoc<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, classInstanceId),
       getDoc<AppSettings>(COLLECTIONS.APP_SETTINGS, 'global'),
@@ -96,106 +128,124 @@ export async function POST(request: NextRequest) {
     if (!classInstance) {
       return Response.json({ error: 'Class instance not found' }, { status: 404 });
     }
-
     if (!settings) {
       return Response.json({ error: 'App settings not found' }, { status: 500 });
     }
 
-    // Check for active long approved absence
-    const longAbsences = await queryDocs<LongAbsenceRecord>(COLLECTIONS.LONG_ABSENCE_RECORDS, [
-      { type: 'where', field: 'studentId', op: '==', value: studentId },
-      { type: 'where', field: 'status', op: '==', value: 'approved' },
-    ]);
-    const classDate = classInstance.scheduledStartTime;
-    const hasActiveLongAbsence = longAbsences.some(
-      (la) => la.startDate <= classDate && la.endDate >= classDate
-    );
+    for (const record of records) {
+      const { studentId, lateByMinutes, notes, bookingId } = record;
+      // Map UI-friendly aliases to canonical enum values
+      const status = (STATUS_ALIASES[record.status] ?? record.status) as AttendanceStatus;
 
-    // Check if absence was notified and approved
-    const absenceRecords = await queryDocs<AbsenceRecord>(COLLECTIONS.ABSENCE_RECORDS, [
-      { type: 'where', field: 'studentId', op: '==', value: studentId },
-      { type: 'where', field: 'classInstanceId', op: '==', value: classInstanceId },
-    ]);
-    const absenceApproved = absenceRecords.some((a) => a.isApproved);
+      // Check for active long approved absence
+      const longAbsences = await queryDocs<LongAbsenceRecord>(COLLECTIONS.LONG_ABSENCE_RECORDS, [
+        { type: 'where', field: 'studentId', op: '==', value: studentId },
+        { type: 'where', field: 'status', op: '==', value: 'approved' },
+      ]);
+      const classDate = classInstance.scheduledStartTime
+        ? classInstance.scheduledStartTime.slice(0, 10)
+        : '';
+      const hasActiveLongAbsence = longAbsences.some(
+        (la) => la.startDate <= classDate && la.endDate >= classDate
+      );
 
-    // Compute violation (pure function)
-    const violation = computeAttendanceViolation(
-      {
-        attendanceStatus: status as AttendanceStatus,
-        classWasCancelledByTeacher: classInstance.status === 'cancelled',
-        studentHasActiveLongApprovedAbsence: hasActiveLongAbsence,
-        absenceWasNotifiedAndApproved: absenceApproved,
-      },
-      settings
-    );
+      // Check if absence was notified and approved
+      const absenceRecords = await queryDocs<AbsenceRecord>(COLLECTIONS.ABSENCE_RECORDS, [
+        { type: 'where', field: 'studentId', op: '==', value: studentId },
+        { type: 'where', field: 'classInstanceId', op: '==', value: record.classInstanceId },
+      ]);
+      const absenceApproved = absenceRecords.some((a) => a.isApproved);
 
-    // Create attendance record
-    const attendanceId = await createDoc(COLLECTIONS.ATTENDANCE_RECORDS, {
-      studentId,
-      classInstanceId,
-      teacherId: auth.uid,
-      status,
-      markedAt: nowISO(),
-      markedBy: auth.uid,
-      lateByMinutes,
-      isViolation: violation.isViolation,
-      violationReason: violation.reason,
-      countedInConsecutiveViolations: violation.countInConsecutive,
-      notes,
-    });
+      // Compute violation (pure function)
+      const violation = computeAttendanceViolation(
+        {
+          attendanceStatus: status,
+          classWasCancelledByTeacher: classInstance.status === 'cancelled',
+          studentHasActiveLongApprovedAbsence: hasActiveLongAbsence,
+          absenceWasNotifiedAndApproved: absenceApproved,
+        },
+        settings
+      );
 
-    // Update violation counter (transactional)
-    const counterResult = await updateViolationCounter({
-      studentId,
-      classInstanceId,
-      isViolation: violation.isViolation,
-      violationReason: violation.reason,
-      settings,
-    });
-
-    // Audit log
-    const { ipAddress, userAgent } = extractRequestMeta(request);
-    await writeAuditLog({
-      actorId: auth.uid,
-      actorRole: auth.role,
-      action: 'ATTENDANCE_MARKED',
-      entityType: 'attendance_record',
-      entityId: attendanceId,
-      newState: { status, isViolation: violation.isViolation, consecutiveCount: counterResult.newCount },
-      ipAddress,
-      userAgent,
-    });
-
-    // Notify student if compulsory payment was triggered
-    if (counterResult.compulsoryTriggered) {
-      await createNotification({
-        recipientId: studentId,
-        type: 'PAYMENT_COMPULSORY_TRIGGERED',
-        title: 'Payment Required',
-        body: `Your payment has become compulsory due to ${settings.consecutiveViolationThreshold} consecutive class violations. Please upload payment proof.`,
-        referenceType: 'monthly_payment_status',
-        referenceId: studentId,
+      // Create attendance record
+      const attendanceId = await createDoc(COLLECTIONS.ATTENDANCE_RECORDS, {
+        studentId,
+        classInstanceId: record.classInstanceId,
+        teacherId: auth.uid,
+        status,
+        markedAt: nowISO(),
+        markedBy: auth.uid,
+        lateByMinutes,
+        isViolation: violation.isViolation,
+        violationReason: violation.reason,
+        countedInConsecutiveViolations: violation.countInConsecutive,
+        notes,
+        ...(bookingId ? { bookingId } : {}),
       });
 
+      // Update violation counter (transactional)
+      const counterResult = await updateViolationCounter({
+        studentId,
+        classInstanceId: record.classInstanceId,
+        isViolation: violation.isViolation,
+        violationReason: violation.reason,
+        settings,
+      });
+
+      // Audit log
       await writeAuditLog({
-        actorId: 'system',
-        actorRole: 'super_admin',
-        action: 'PAYMENT_COMPULSORY_TRIGGERED',
-        entityType: 'student_profile',
-        entityId: studentId,
-        newState: { consecutiveCount: counterResult.newCount, threshold: settings.consecutiveViolationThreshold },
+        actorId: auth.uid,
+        actorRole: auth.role,
+        action: 'ATTENDANCE_MARKED',
+        entityType: 'attendance_record',
+        entityId: attendanceId,
+        newState: { status, isViolation: violation.isViolation, consecutiveCount: counterResult.newCount },
         ipAddress,
         userAgent,
       });
+
+      // Notify student if compulsory payment was triggered
+      if (counterResult.compulsoryTriggered) {
+        await createNotification({
+          recipientId: studentId,
+          type: 'PAYMENT_COMPULSORY_TRIGGERED',
+          title: 'Payment Required',
+          body: `Your payment has become compulsory due to ${settings.consecutiveViolationThreshold} consecutive class violations. Please upload payment proof.`,
+          referenceType: 'monthly_payment_status',
+          referenceId: studentId,
+        });
+
+        await writeAuditLog({
+          actorId: 'system',
+          actorRole: 'super_admin',
+          action: 'PAYMENT_COMPULSORY_TRIGGERED',
+          entityType: 'student_profile',
+          entityId: studentId,
+          newState: { consecutiveCount: counterResult.newCount, threshold: settings.consecutiveViolationThreshold },
+          ipAddress,
+          userAgent,
+        });
+      }
+
+      results.push({
+        attendanceId,
+        studentId,
+        isViolation: violation.isViolation,
+        consecutiveCount: counterResult.newCount,
+        compulsoryTriggered: counterResult.compulsoryTriggered,
+      });
     }
 
+    // Return batch results; for single-record callers, also include top-level fields for compat
+    const first = results[0];
     return Response.json({
       success: true,
-      attendanceId,
-      isViolation: violation.isViolation,
-      violationReason: violation.reason,
-      consecutiveCount: counterResult.newCount,
-      compulsoryTriggered: counterResult.compulsoryTriggered,
+      results,
+      // Backwards-compatible single-record fields
+      attendanceId: first.attendanceId,
+      isViolation: first.isViolation,
+      consecutiveCount: first.consecutiveCount,
+      compulsoryTriggered: first.compulsoryTriggered,
     });
   } catch (error) {
     return authErrorResponse(error);

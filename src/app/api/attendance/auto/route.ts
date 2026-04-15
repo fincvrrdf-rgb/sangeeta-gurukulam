@@ -61,12 +61,12 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'App settings not found' }, { status: 500 });
     }
 
-    // Calculate lateness
-    const now = new Date();
-    const [startH, startM] = (classInstance.scheduledStartTime || '').split(':').map(Number);
-    const classStart = new Date();
-    classStart.setHours(startH || 0, startM || 0, 0, 0);
-    const lateByMinutes = Math.max(0, Math.floor((now.getTime() - classStart.getTime()) / 60000));
+    // Calculate lateness using UTC epoch so the result is timezone-independent.
+    // scheduledStartTime is an offset-aware ISO string (e.g. 2026-04-16T07:30:00+05:30).
+    // Parsing it with new Date() gives the correct UTC epoch on any server timezone.
+    const now = Date.now();
+    const classStart = new Date(classInstance.scheduledStartTime).getTime();
+    const lateByMinutes = Math.max(0, Math.floor((now - classStart) / 60000));
 
     // Determine attendance status
     let status: AttendanceStatus;
@@ -83,7 +83,10 @@ export async function POST(request: NextRequest) {
       { type: 'where', field: 'studentId', op: '==', value: studentId },
       { type: 'where', field: 'status', op: '==', value: 'approved' },
     ]);
-    const classDate = (classInstance as unknown as Record<string, string>).scheduledDate || now.toISOString().slice(0, 10);
+    // Extract YYYY-MM-DD from the IST-offset ISO string for absence record comparison.
+    const classDate = classInstance.scheduledStartTime
+      ? classInstance.scheduledStartTime.slice(0, 10)
+      : new Date(now).toISOString().slice(0, 10);
     const hasActiveLongAbsence = longAbsences.some(
       (la) => la.startDate <= classDate && la.endDate >= classDate
     );
