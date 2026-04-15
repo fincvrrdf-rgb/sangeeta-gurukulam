@@ -18,6 +18,7 @@ interface StudentBooking {
   studentId: string;
   studentName: string;
   violationCount: number;
+  dependentName?: string | null;
 }
 
 interface ClassInstanceDetail {
@@ -116,19 +117,43 @@ export default function MarkAttendancePage() {
     setDrafts(all);
   }
 
-  const allMarked = students.length > 0 && students.every((s) => drafts[s.studentId]);
+  // allMarked must include dependent draft keys for students who have a dependent
+  const allMarked = students.length > 0 && students.every((s) =>
+    drafts[s.studentId] &&
+    (!s.dependentName || drafts[`${s.studentId}::dep`])
+  );
   const presentCount = Object.values(drafts).filter((s) => s === 'present').length;
+  const totalAttendees = students.length + students.filter((s) => !!s.dependentName).length;
 
   async function handleSubmit() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const records = students.map((s) => ({
-        bookingId: s.bookingId,
-        studentId: s.studentId,
-        classInstanceId: id,
-        status: drafts[s.studentId] ?? 'absent',
-      }));
+      const records: Array<{
+        bookingId?: string;
+        studentId: string;
+        classInstanceId: string;
+        status: string;
+        notes?: string;
+      }> = [];
+
+      for (const s of students) {
+        records.push({
+          bookingId: s.bookingId,
+          studentId: s.studentId,
+          classInstanceId: id,
+          status: drafts[s.studentId] ?? 'absent',
+        });
+        // Emit a second record for the dependent (e.g. child joining with parent)
+        if (s.dependentName) {
+          records.push({
+            studentId: `${s.studentId}_dependent`,
+            classInstanceId: id,
+            status: drafts[`${s.studentId}::dep`] ?? drafts[s.studentId] ?? 'absent',
+            notes: `Marked with primary account (${s.studentName} — ${s.dependentName})`,
+          });
+        }
+      }
 
       const res = await apiFetch('/api/attendance/mark', {
         method: 'POST',
@@ -200,7 +225,7 @@ export default function MarkAttendancePage() {
             </button>
           ))}
           <span className="ml-auto text-xs text-gray-500">
-            {presentCount} / {students.length} present
+            {presentCount} / {totalAttendees} present
           </span>
         </div>
       )}
@@ -235,7 +260,7 @@ export default function MarkAttendancePage() {
                 )}
               </div>
 
-              {/* Radio buttons */}
+              {/* Radio buttons — primary student */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {STATUS_OPTIONS.map(({ value, label, color }) => {
                   const selected = drafts[student.studentId] === value;
@@ -261,6 +286,42 @@ export default function MarkAttendancePage() {
                   );
                 })}
               </div>
+
+              {/* Dependent row — child/second attendee joining with this student */}
+              {student.dependentName && (
+                <div className="pl-4 border-l-2 border-saffron-200 space-y-2">
+                  <p className="text-xs text-gray-500">
+                    ↳ <span className="font-medium text-charcoal">{student.dependentName}</span>
+                    <span className="text-gray-400"> (with {student.studentName})</span>
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {STATUS_OPTIONS.map(({ value, label, color }) => {
+                      const depKey = `${student.studentId}::dep`;
+                      const selected = drafts[depKey] === value;
+                      return (
+                        <label
+                          key={value}
+                          className={`flex items-center justify-center gap-1.5 border-2 rounded-lg px-3 py-2 cursor-pointer text-xs font-medium transition-all ${
+                            selected
+                              ? color
+                              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`status-${student.studentId}-dep`}
+                            value={value}
+                            checked={selected}
+                            onChange={() => setStatus(`${student.studentId}::dep`, value)}
+                            className="sr-only"
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
       </div>
@@ -283,7 +344,7 @@ export default function MarkAttendancePage() {
             disabled={submitting || !allMarked}
             className="btn-primary disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : `Submit Attendance (${students.length})`}
+            {submitting ? 'Submitting…' : `Submit Attendance (${totalAttendees})`}
           </button>
         </div>
       )}

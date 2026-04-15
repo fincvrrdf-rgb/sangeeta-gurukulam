@@ -86,6 +86,11 @@ export default function StudentsPage() {
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Change Batch
+  const [changeBatchId, setChangeBatchId] = useState<string | null>(null);
+  const [changeToBatchId, setChangeToBatchId] = useState('');
+  const [changingBatch, setChangingBatch] = useState(false);
+
   // Filters
   const [filterBand, setFilterBand] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
@@ -178,6 +183,34 @@ export default function StudentsPage() {
       alert('Could not delete student.');
     } finally {
       setActioningId(null);
+    }
+  }
+
+  async function handleChangeBatch(studentId: string) {
+    if (!changeToBatchId) return;
+    setChangingBatch(true);
+    try {
+      const res = await apiFetch(`/api/admin/students/${studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentBatchBandId: changeToBatchId }),
+      });
+      if (!res.ok) throw new Error('Failed to change batch');
+      const newCode = bands.find((b) => b.id === changeToBatchId)?.code;
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.userId === studentId
+            ? { ...s, currentBatchBandId: changeToBatchId, batchBandCode: newCode }
+            : s
+        )
+      );
+      setChangeBatchId(null);
+      setWaiverSuccess(`Batch updated to Batch ${newCode}.`);
+      setTimeout(() => setWaiverSuccess(null), 3000);
+    } catch {
+      alert('Could not change batch. Please try again.');
+    } finally {
+      setChangingBatch(false);
     }
   }
 
@@ -341,6 +374,15 @@ export default function StudentsPage() {
                       Delete
                     </button>
                   </div>
+                  <button
+                    onClick={() => {
+                      setChangeBatchId(changeBatchId === s.userId ? null : s.userId);
+                      setChangeToBatchId(s.currentBatchBandId ?? '');
+                    }}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Change Batch
+                  </button>
                   {(s.isPaymentCompulsoryThisCycle || (s.consecutiveViolationCount ?? 0) > 0) && (
                     <button
                       onClick={() => {
@@ -354,6 +396,42 @@ export default function StudentsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Inline Change Batch panel */}
+              {changeBatchId === s.userId && (
+                <div className="px-5 pb-4 bg-blue-50 border-t border-blue-100">
+                  <p className="text-xs font-semibold text-blue-800 mt-3 mb-2">
+                    Change batch for {s.fullName}
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    <select
+                      className="input text-xs flex-1"
+                      value={changeToBatchId}
+                      onChange={(e) => setChangeToBatchId(e.target.value)}
+                    >
+                      <option value="">— Select batch —</option>
+                      {bands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          Batch {b.code} — {b.description || b.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleChangeBatch(s.userId)}
+                      disabled={changingBatch || !changeToBatchId || changeToBatchId === s.currentBatchBandId}
+                      className="btn-primary text-xs px-3 whitespace-nowrap disabled:opacity-50"
+                    >
+                      {changingBatch ? 'Saving…' : 'Confirm'}
+                    </button>
+                    <button
+                      onClick={() => setChangeBatchId(null)}
+                      className="btn-secondary text-xs px-3"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Inline waiver form */}
               {waiverStudentId === s.userId && (

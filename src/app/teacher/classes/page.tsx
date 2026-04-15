@@ -399,30 +399,35 @@ export default function ManageClassesPage() {
                         )}
                       </div>
 
-                      {inst.status !== 'cancelled' && inst.status !== 'completed' && (
+                      {inst.status !== 'cancelled' && (
                         <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
+                          {/* Attendance available for active and completed classes */}
                           <Link
                             href={`/teacher/classes/${inst.id}/attendance`}
                             className="btn-primary text-xs px-3 py-1.5"
                           >
                             Attendance
                           </Link>
-                          <button
-                            onClick={() => {
-                              setMeetLinkId(inst.id);
-                              setMeetLinkInput(inst.meetLink ?? '');
-                            }}
-                            className="btn-secondary text-xs px-3 py-1.5"
-                          >
-                            Meet Link
-                          </button>
-                          <button
-                            onClick={() => handleCancel(inst.id)}
-                            disabled={cancellingId === inst.id}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
-                          >
-                            {cancellingId === inst.id ? '…' : 'Cancel'}
-                          </button>
+                          {inst.status !== 'completed' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setMeetLinkId(inst.id);
+                                  setMeetLinkInput(inst.meetLink ?? '');
+                                }}
+                                className="btn-secondary text-xs px-3 py-1.5"
+                              >
+                                Meet Link
+                              </button>
+                              <button
+                                onClick={() => handleCancel(inst.id)}
+                                disabled={cancellingId === inst.id}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                              >
+                                {cancellingId === inst.id ? '…' : 'Cancel'}
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

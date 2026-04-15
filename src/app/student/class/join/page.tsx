@@ -41,41 +41,44 @@ export default function JoinClassPage() {
   const [error, setError] = useState('');
   const [attendanceMsg, setAttendanceMsg] = useState<string | null>(null);
 
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const todayDow = String(new Date().getDay());
-  const scheduleNote = SCHEDULE_INFO[todayDow];
+  // Use IST calendar date so US/international students query the correct day's classes.
+  // new Date().toISOString() gives UTC date which can be the wrong calendar day for
+  // students in timezones behind IST (e.g. California at 6 PM is still yesterday UTC).
+  const todayIST = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  // Day-of-week in IST for the schedule note
+  const istDow = String(new Date(todayIST + 'T00:00:00+05:30').getDay());
+  const scheduleNote = SCHEDULE_INFO[istDow];
 
   useEffect(() => {
-    apiFetch(`/api/classes/instances?from=${todayISO}&to=${todayISO}`)
+    apiFetch(`/api/classes/instances?from=${todayIST}&to=${todayIST}`)
       .then((r) => r.json())
       .then((data) => setInstances(data.instances ?? []))
       .catch(() => setError("Could not load today's classes"))
       .finally(() => setLoading(false));
-  }, [apiFetch, todayISO]);
+  }, [apiFetch, todayIST]);
 
-  const now = new Date();
-
+  // Timezone-safe status: scheduledStartTime is an offset-aware ISO string (e.g. +05:30).
+  // new Date(iso).getTime() gives the correct UTC epoch regardless of the viewer's timezone.
+  // Never extract .getHours() from a parsed IST timestamp — that gives local-timezone hours.
   function getStatus(instance: ClassInstance) {
-    const timeStr = instance.scheduledStartTime;
-    // Handle ISO timestamps and plain HH:MM
-    let h: number, m: number;
-    if (timeStr.includes('T')) {
-      const d = new Date(timeStr);
-      h = d.getHours(); m = d.getMinutes();
-    } else {
-      [h, m] = timeStr.split(':').map(Number);
-    }
-    const classTime = new Date();
-    classTime.setHours(h, m, 0, 0);
-    const diff = (classTime.getTime() - now.getTime()) / 60000;
-    if (diff > 15) return 'upcoming';
-    if (diff > -60) return 'joinable';
-    return 'ended';
+    const now = Date.now();
+    const start = new Date(instance.scheduledStartTime).getTime();
+    const end = new Date(instance.scheduledEndTime).getTime();
+    const minsUntilStart = (start - now) / 60000;
+    if (instance.status === 'cancelled') return 'cancelled';
+    if (instance.status === 'completed' || end < now) return 'ended';
+    // Joinable: from 15 min before start through the full session duration
+    if (minsUntilStart <= 15) return 'joinable';
+    return 'upcoming';
   }
 
   function formatTime(timeStr: string): string {
     if (timeStr.includes('T')) {
-      return new Date(timeStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return new Date(timeStr).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+      });
     }
     return timeStr;
   }
