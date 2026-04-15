@@ -1,7 +1,9 @@
 /**
- * API: PATCH /api/classes/instances/[instanceId]
+ * API: GET/PATCH/DELETE /api/classes/instances/[instanceId]
  *
- * Update a class instance — primarily for saving the Google Meet link.
+ * GET  — Fetch a single class instance (used by the teacher attendance page)
+ * PATCH — Update a class instance — meet link, status, time rescheduling
+ * DELETE — Remove a class instance
  */
 
 import { NextRequest } from 'next/server';
@@ -10,6 +12,44 @@ import { getDoc, updateDoc, deleteDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ instanceId: string }> }
+) {
+  try {
+    await requireAuth(request, ['teacher', 'super_admin']);
+    const { instanceId } = await params;
+
+    const instance = await getDoc<Record<string, unknown>>(COLLECTIONS.CLASS_INSTANCES, instanceId);
+    if (!instance) {
+      return Response.json({ error: 'Class instance not found' }, { status: 404 });
+    }
+
+    // Extract a human-readable date and time for the attendance page header
+    const startISO = (instance.scheduledStartTime as string) ?? '';
+    const date = startISO.slice(0, 10);
+    const startTime = startISO
+      ? new Date(startISO).toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+        })
+      : '';
+
+    return Response.json({
+      id: instanceId,
+      date,
+      startTime,
+      batchBand: (instance.batchBand as string) ?? '',
+      status: (instance.status as string) ?? 'scheduled',
+      meetLink: (instance.meetLink as string) ?? (instance.googleMeetLink as string) ?? null,
+      scheduledStartTime: startISO,
+      scheduledEndTime: (instance.scheduledEndTime as string) ?? '',
+      studentCount: 0,
+    });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
 
 const UpdateInstanceSchema = z.object({
   // Accept with or without https:// — normalize below
