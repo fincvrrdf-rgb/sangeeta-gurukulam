@@ -1,55 +1,61 @@
 /**
  * API: GET /api/classes/instances/[instanceId]/bookings
  *
- * Returns the list of students booked into a specific class instance.
+ * Returns the list of students enrolled in the same batch as this class instance.
  * Used by the teacher attendance page to show who is expected.
+ *
+ * Enrolment is batch-based: students are linked to classes through
+ * STUDENT_PROFILES.currentBatchBandId matching ClassInstance.batchBandId.
  */
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { queryDocs } from '@/lib/firebase/firestore';
+import { getDoc, queryDocs } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
+import type { ClassInstance } from '@/domain/types';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { instanceId: string } }
+  { params }: { params: Promise<{ instanceId: string }> }
 ) {
   try {
     await requireAuth(request, ['teacher', 'super_admin']);
-    const { instanceId } = params;
+    const { instanceId } = await params;
 
-    // Get all bookings for this instance
-    const bookings = await queryDocs<Record<string, unknown>>(
-      COLLECTIONS.STUDENT_CLASS_BOOKINGS,
-      [{ type: 'where', field: 'classInstanceId', op: '==', value: instanceId }]
-    );
+    // 1. Fetch the class instance to find its batch
+    const instance = await getDoc<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, instanceId);
+    if (!instance) {
+      return Response.json({ error: 'Class instance not found' }, { status: 404 });
+    }
 
-    if (bookings.length === 0) {
+    const batchBandId = instance.batchBandId;
+    if (!batchBandId) {
       return Response.json({ success: true, bookings: [] });
     }
 
-    // Fetch student profiles to get names
-    const studentIds = [...new Set(bookings.map((b) => b.studentId as string))];
-
+    // 2. Find all active students in this batch
     const profiles = await queryDocs<Record<string, unknown>>(
       COLLECTIONS.STUDENT_PROFILES,
-      [{ type: 'where', field: 'userId', op: 'in', value: studentIds.slice(0, 30) }]
+      [{ type: 'where', field: 'currentBatchBandId', op: '==', value: batchBandId }]
     );
 
-    const profileMap = new Map(profiles.map((p) => [p.userId as string, p]));
+    // Filter out deactivated / deleted students
+    const activeProfiles = profiles.filter(
+      (p) => p.isActive !== false && p.status !== 'inactive'
+    );
 
-    const result = bookings.map((b) => {
-      const profile = profileMap.get(b.studentId as string);
-      return {
-        bookingId:      b.id as string,
-        studentId:      b.studentId as string,
-        studentName:    (profile?.displayName as string) ?? (profile?.fullName as string) ?? (profile?.name as string) ?? 'Unknown',
-        violationCount: (profile?.consecutiveViolations as number) ?? (profile?.consecutiveViolationCount as number) ?? 0,
-        status:         b.status ?? 'booked',
-        // Dependent support: if a student has a child joining with them, surface the child's name
-        dependentName:  (profile?.dependentName as string) ?? null,
-      };
-    });
+    if (activeProfiles.length === 0) {
+      return Response.json({ success: true, bookings: [] });
+    }
+
+    const result = activeProfiles.map((p) => ({
+      bookingId:      '',
+      studentId:      (p.userId as string) ?? (p.id as string),
+      studentName:    (p.displayName as string) ?? (p.fullName as string) ?? (p.name as string) ?? 'Unknown',
+      violationCount: (p.consecutiveViolations as number) ?? (p.consecutiveViolationCount as number) ?? 0,
+      status:         'enrolled',
+      dependentName:  (p.dependentName as string) ?? null,
+    }));
 
     // Sort by name
     result.sort((a, b) => a.studentName.localeCompare(b.studentName));
