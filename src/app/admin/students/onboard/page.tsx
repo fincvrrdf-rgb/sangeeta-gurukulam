@@ -51,8 +51,9 @@ export default function OnboardStudentPage() {
         return;
       }
 
-      setSuccess(`${name} added as student! They can now sign in with ${email}.`);
-      setName(''); setEmail(''); setPhone(''); setGuardianName('');
+      // Redirect back to the students list and force a fresh fetch
+      router.refresh();
+      router.push('/admin/students?added=' + encodeURIComponent(name));
     } catch {
       setError('Network error. Please try again.');
     } finally {

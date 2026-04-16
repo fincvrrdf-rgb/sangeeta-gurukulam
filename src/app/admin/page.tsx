@@ -12,6 +12,7 @@ import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface SystemStats {
   totalStudents: number;
+  totalCoLearners: number;
   totalTeachers: number;
   activeClasses: number;
   pendingPayments: number;
@@ -201,10 +202,13 @@ export default function AdminDashboard() {
           (b: { isActive?: boolean }) => b.isActive
         ).length;
         setBatchCount(allBatches.length);
-        const totalStudents = (studentData.students ?? []).length;
+        const studentList: { dependentName?: string }[] = studentData.students ?? [];
+        const totalStudents = studentList.length;
+        const totalCoLearners = studentList.filter((s) => !!s.dependentName).length;
         const totalTeachers = (teacherData.teachers ?? []).length;
         setStats({
           totalStudents,
+          totalCoLearners,
           totalTeachers,
           activeClasses: activeBatches,
           pendingPayments: 0,
@@ -214,7 +218,7 @@ export default function AdminDashboard() {
       .finally(() => setLoadingStats(false));
   }, [user, apiFetch]);
 
-  const firstName = user?.displayName?.split(' ')[0] ?? 'Admin';
+  const firstName = user?.displayName?.split(' ')[0] ?? 'Super Admin';
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
@@ -224,7 +228,7 @@ export default function AdminDashboard() {
           Namaste, {firstName} 🙏
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Sangeeta Gurukulam &mdash; Admin Control Panel
+          Sangeeta Gurukulam &mdash; Super Admin Panel
         </p>
       </div>
 
@@ -263,8 +267,10 @@ export default function AdminDashboard() {
         <h2 className="section-title mb-4">System Overview</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard
-            label="Total Students"
-            value={stats?.totalStudents ?? null}
+            label={stats && stats.totalCoLearners > 0
+              ? `Students · ${stats.totalCoLearners} co-learner${stats.totalCoLearners !== 1 ? 's' : ''}`
+              : 'Students'}
+            value={stats ? stats.totalStudents + stats.totalCoLearners : null}
             icon="🎵"
             loading={loadingStats}
           />

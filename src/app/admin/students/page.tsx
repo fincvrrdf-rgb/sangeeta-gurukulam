@@ -9,6 +9,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 import type { StudentProfile, BatchBand } from '@/domain/types';
@@ -74,6 +75,7 @@ function SkeletonRow() {
 
 export default function StudentsPage() {
   const { user, apiFetch } = useAuthContext();
+  const searchParams = useSearchParams();
 
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [bands, setBands] = useState<BatchBand[]>([]);
@@ -133,6 +135,15 @@ export default function StudentsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Show success toast when redirected back from onboard
+  useEffect(() => {
+    const added = searchParams.get('added');
+    if (added) {
+      setWaiverSuccess(`${added} added successfully.`);
+      setTimeout(() => setWaiverSuccess(null), 4000);
+    }
+  }, [searchParams]);
 
   async function handleWaiveViolation(studentId: string) {
     if (!waiverReason.trim()) return;
