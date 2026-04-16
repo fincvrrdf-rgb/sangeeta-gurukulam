@@ -41,13 +41,15 @@ function istDateOffset(days: number): string {
 
 function todayIST(): string { return istDateOffset(0); }
 function in14DaysIST(): string { return istDateOffset(14); }
+function minus7DaysIST(): string { return istDateOffset(-7); }
 
 function formatDay(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
   if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
   if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
   return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
 }
@@ -131,7 +133,7 @@ export default function ManageClassesPage() {
 
   useEffect(() => {
     if (!user) return;
-    const from = todayIST();
+    const from = minus7DaysIST();
     const to = in14DaysIST();
     Promise.all([
       apiFetch(`/api/classes/instances?from=${from}&to=${to}`).then((r) => r.json()),
