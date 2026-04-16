@@ -34,6 +34,7 @@ const STUDENT_NAV: NavItem[] = [
 const TEACHER_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/teacher', icon: '🏠' },
   { label: 'Classes', href: '/teacher/classes', icon: '📹' },
+  { label: 'Attendance', href: '/teacher/attendance', icon: '✅' },
   { label: 'Availability', href: '/teacher/availability', icon: '📅' },
   { label: 'Bhajan', href: '/teacher/bhajan', icon: '🎶' },
   { label: 'Lyrics', href: '/teacher/lyrics', icon: '📝' },
@@ -52,6 +53,7 @@ const ADMIN_NAV: NavItem[] = [
   { label: 'Students', href: '/admin/students', icon: '🎓' },
   { label: 'Lyrics', href: '/teacher/lyrics', icon: '📝' },
   { label: 'Classes', href: '/teacher/classes', icon: '🗓️' },
+  { label: 'Attendance', href: '/teacher/attendance', icon: '✅' },
   { label: 'Bhajan', href: '/teacher/bhajan', icon: '🎤' },
   { label: 'Settings', href: '/admin/settings', icon: '⚙️' },
   { label: 'Calendar', href: '/admin/devotional-calendar', icon: '🗓️' },
