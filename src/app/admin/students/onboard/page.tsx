@@ -167,24 +167,24 @@ export default function OnboardStudentPage() {
               className="accent-saffron-600 w-4 h-4"
             />
             <label htmlFor="isDependent" className="text-sm font-medium text-charcoal cursor-pointer">
-              Parent &amp; child are joining together (shared account)
+              Joining with a co-learner (shared session)
             </label>
           </div>
           {isDependent && (
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Child&apos;s Name <span className="text-red-500">*</span>
+                Co-learner&apos;s Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={dependentName}
                 onChange={(e) => setDependentName(e.target.value)}
-                placeholder="Child's full name"
+                placeholder="Co-learner's full name"
                 className="input"
                 required={isDependent}
               />
               <p className="text-[10px] text-gray-500 mt-1">
-                When the parent joins a class, attendance is automatically recorded for the child too.
+                When this student joins a class, attendance is automatically recorded for the co-learner too.
               </p>
             </div>
           )}

@@ -292,7 +292,7 @@ export default function MarkAttendancePage() {
                 <div className="pl-4 border-l-2 border-saffron-200 space-y-2">
                   <p className="text-xs text-gray-500">
                     ↳ <span className="font-medium text-charcoal">{student.dependentName}</span>
-                    <span className="text-gray-400"> (with {student.studentName})</span>
+                    <span className="text-gray-400"> (co-learner with {student.studentName})</span>
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {STATUS_OPTIONS.map(({ value, label, color }) => {

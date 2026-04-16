@@ -237,8 +237,8 @@ export default function StudentsPage() {
       );
       setDependentStudentId(null);
       setWaiverSuccess(dependentNameInput.trim()
-        ? `Dependent "${dependentNameInput.trim()}" saved.`
-        : 'Dependent removed.');
+        ? `Co-learner "${dependentNameInput.trim()}" saved.`
+        : 'Co-learner removed.');
       setTimeout(() => setWaiverSuccess(null), 3000);
     } catch {
       alert('Could not save. Please try again.');
@@ -423,7 +423,7 @@ export default function StudentsPage() {
                     }}
                     className="text-xs text-purple-600 hover:underline"
                   >
-                    {(s as unknown as Record<string, unknown>).dependentName ? 'Edit Dependent' : '+ Add Dependent'}
+                    {(s as unknown as Record<string, unknown>).dependentName ? 'Edit Co-learner' : '+ Add Co-learner'}
                   </button>
                   {(s.isPaymentCompulsoryThisCycle || (s.consecutiveViolationCount ?? 0) > 0) && (
                     <button
@@ -479,16 +479,16 @@ export default function StudentsPage() {
               {dependentStudentId === s.userId && (
                 <div className="px-5 pb-4 bg-purple-50 border-t border-purple-100">
                   <p className="text-xs font-semibold text-purple-800 mt-3 mb-1">
-                    Dependent for {s.fullName}
+                    Co-learner for {s.fullName}
                   </p>
                   <p className="text-xs text-purple-600 mb-2">
-                    Enter the child&apos;s name if a mother+child pair joins together. Leave blank to remove.
+                    Add a co-learner who joins this student in the same session. Leave blank to remove.
                   </p>
                   <div className="flex gap-2 flex-wrap">
                     <input
                       type="text"
                       className="input text-xs flex-1"
-                      placeholder="Child's name (e.g. Rhea)"
+                      placeholder="Co-learner's name (e.g. Rhea)"
                       value={dependentNameInput}
                       onChange={(e) => setDependentNameInput(e.target.value)}
                     />
