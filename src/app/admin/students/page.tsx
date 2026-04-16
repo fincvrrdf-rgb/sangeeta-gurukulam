@@ -278,7 +278,10 @@ export default function StudentsPage() {
             Student Management
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {loading ? 'Loading…' : `${students.length} student${students.length !== 1 ? 's' : ''} enrolled`}
+            {loading ? 'Loading…' : (() => {
+              const coLearners = students.filter((s) => !!(s as unknown as Record<string, unknown>).dependentName).length;
+              return `${students.length} student${students.length !== 1 ? 's' : ''}${coLearners > 0 ? ` · ${coLearners} co-learner${coLearners !== 1 ? 's' : ''}` : ''} enrolled`;
+            })()}
           </p>
         </div>
         <Link href="/admin/students/onboard" className="btn-primary flex-shrink-0">
@@ -547,6 +550,9 @@ export default function StudentsPage() {
       {!loading && filtered.length > 0 && filtered.length < students.length && (
         <p className="text-xs text-gray-400 text-center">
           Showing {filtered.length} of {students.length} students
+          {students.filter((s) => !!(s as unknown as Record<string, unknown>).dependentName).length > 0 && (
+            <> · {students.filter((s) => !!(s as unknown as Record<string, unknown>).dependentName).length} co-learner{students.filter((s) => !!(s as unknown as Record<string, unknown>).dependentName).length !== 1 ? 's' : ''}</>
+          )}
         </p>
       )}
 
