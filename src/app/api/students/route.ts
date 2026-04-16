@@ -16,11 +16,22 @@ export async function GET(request: NextRequest) {
 
     const profiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
 
-    const students = profiles.map((p) => ({
-      id: p.userId as string,
-      name: p.fullName as string || (p.userId as string),
-      batchBand: p.currentBatchBandCode as string || '',
-    }));
+    const students: { id: string; name: string; batchBand: string }[] = [];
+    for (const p of profiles) {
+      students.push({
+        id: p.userId as string,
+        name: (p.fullName as string) || (p.userId as string),
+        batchBand: (p.currentBatchBandCode as string) || '',
+      });
+      // Include co-learner as a virtual entry so they can be assessed separately
+      if (p.dependentName) {
+        students.push({
+          id: `${p.userId as string}_dependent`,
+          name: `${p.dependentName as string} (co-learner with ${(p.fullName as string) || p.userId})`,
+          batchBand: (p.currentBatchBandCode as string) || '',
+        });
+      }
+    }
 
     // Teachers only see students in their batches (if assigned)
     if (auth.role === 'teacher') {

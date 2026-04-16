@@ -10,7 +10,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { createDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { advanceStudent } from '@/services/progression/gates';
@@ -47,7 +47,13 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const assessments = await queryDocs(COLLECTIONS.LESSON_ASSESSMENTS, constraints);
+    const raw = await queryDocs<Record<string, unknown>>(COLLECTIONS.LESSON_ASSESSMENTS, constraints);
+
+    // Normalise: ensure studentName is always present (older records may lack it)
+    const assessments = raw.map((a) => ({
+      ...a,
+      studentName: (a.studentName as string) || (a.studentId as string) || 'Unknown',
+    }));
 
     return Response.json({ assessments });
   } catch (error) {
@@ -67,8 +73,17 @@ export async function POST(request: NextRequest) {
 
     const { studentId, teachingUnitId, assessmentType, scores, totalScore, maxScore, result, feedback } = parsed.data;
 
+    // Resolve student name — co-learners use a _dependent virtual ID
+    const isCoLearner = studentId.endsWith('_dependent');
+    const primaryId = isCoLearner ? studentId.replace('_dependent', '') : studentId;
+    const profile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, primaryId);
+    const studentName = isCoLearner
+      ? (profile?.dependentName as string) ?? studentId
+      : (profile?.fullName as string) ?? studentId;
+
     const assessmentId = await createDoc(COLLECTIONS.LESSON_ASSESSMENTS, {
       studentId,
+      studentName,
       teacherId: auth.uid,
       teachingUnitId,
       assessmentType,
