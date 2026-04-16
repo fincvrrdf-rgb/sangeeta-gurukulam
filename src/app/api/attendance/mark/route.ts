@@ -16,7 +16,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { createDoc, updateDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { computeAttendanceViolation } from '@/services/attendance/violation';
 import { updateViolationCounter } from '@/services/attendance/counter';
@@ -167,21 +167,40 @@ export async function POST(request: NextRequest) {
         settings
       );
 
-      // Create attendance record
-      const attendanceId = await createDoc(COLLECTIONS.ATTENDANCE_RECORDS, {
-        studentId,
-        classInstanceId: record.classInstanceId,
-        teacherId: auth.uid,
-        status,
-        markedAt: nowISO(),
-        markedBy: auth.uid,
-        lateByMinutes,
-        isViolation: violation.isViolation,
-        violationReason: violation.reason,
-        countedInConsecutiveViolations: violation.countInConsecutive,
-        notes,
-        ...(bookingId ? { bookingId } : {}),
-      });
+      // Create or update attendance record (idempotent — editing a past class re-submits)
+      const existing = await queryDocs<Record<string, unknown>>(COLLECTIONS.ATTENDANCE_RECORDS, [
+        { type: 'where', field: 'studentId', op: '==', value: studentId },
+        { type: 'where', field: 'classInstanceId', op: '==', value: record.classInstanceId },
+      ]);
+      let attendanceId: string;
+      if (existing.length > 0) {
+        attendanceId = existing[0].id as string;
+        await updateDoc(COLLECTIONS.ATTENDANCE_RECORDS, attendanceId, {
+          status,
+          markedBy: auth.uid,
+          lateByMinutes,
+          isViolation: violation.isViolation,
+          violationReason: violation.reason,
+          countedInConsecutiveViolations: violation.countInConsecutive,
+          notes,
+          updatedAt: nowISO(),
+        });
+      } else {
+        attendanceId = await createDoc(COLLECTIONS.ATTENDANCE_RECORDS, {
+          studentId,
+          classInstanceId: record.classInstanceId,
+          teacherId: auth.uid,
+          status,
+          markedAt: nowISO(),
+          markedBy: auth.uid,
+          lateByMinutes,
+          isViolation: violation.isViolation,
+          violationReason: violation.reason,
+          countedInConsecutiveViolations: violation.countInConsecutive,
+          notes,
+          ...(bookingId ? { bookingId } : {}),
+        });
+      }
 
       // Update violation counter (transactional)
       const counterResult = await updateViolationCounter({

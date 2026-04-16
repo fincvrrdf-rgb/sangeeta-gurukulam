@@ -90,13 +90,27 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Step 3: attach batch code + meet link to every instance
+    // Step 3: compute enrolled learner count per batch (students + co-learners)
+    const enrolledByBatch: Record<string, number> = {};
+    if (instances.length > 0) {
+      const allProfiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
+      for (const p of allProfiles) {
+        if (p.isActive === false) continue;
+        const bid = p.currentBatchBandId as string;
+        if (!bid) continue;
+        enrolledByBatch[bid] = (enrolledByBatch[bid] ?? 0) + 1;
+        if (p.dependentName) enrolledByBatch[bid] += 1; // co-learner
+      }
+    }
+
+    // Step 4: attach batch code + meet link + enrolled count to every instance
     instances = instances.map((i) => {
       const raw = i as unknown as Record<string, unknown>;
       const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? '';
       const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string) || '';
       const link = instanceLink || DEFAULT_MEET_LINKS[code] || null;
-      return { ...i, batchBand: code, meetLink: link, googleMeetLink: link };
+      const enrolledCount = enrolledByBatch[i.batchBandId] ?? 0;
+      return { ...i, batchBand: code, meetLink: link, googleMeetLink: link, enrolledCount };
     });
 
     return Response.json({ success: true, instances });

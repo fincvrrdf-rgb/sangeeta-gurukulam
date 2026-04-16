@@ -25,6 +25,7 @@ interface ClassInstance {
   batchBand: BatchBandCode;
   status: InstanceStatus;
   meetLink?: string;
+  enrolledCount?: number;
 }
 
 interface ClassSlot {
@@ -88,6 +89,7 @@ function normalizeInstance(inst: Record<string, unknown>): ClassInstance {
     batchBand: ((inst.batchBand as string) ?? '') as BatchBandCode,
     status: (inst.status as InstanceStatus) ?? 'scheduled',
     meetLink: (inst.meetLink as string) ?? (inst.googleMeetLink as string) ?? undefined,
+    enrolledCount: (inst.enrolledCount as number) ?? undefined,
   };
 }
 
@@ -374,6 +376,11 @@ export default function ManageClassesPage() {
                     <span className="text-sm font-semibold text-charcoal">
                       {inst.startTime} – {inst.endTime}
                     </span>
+                    {inst.enrolledCount != null && inst.enrolledCount > 0 && (
+                      <span className="text-xs text-gray-400">
+                        {inst.enrolledCount} learner{inst.enrolledCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
                     {inst.status === 'cancelled' && (
                       <span className="badge badge-error">Cancelled</span>
                     )}

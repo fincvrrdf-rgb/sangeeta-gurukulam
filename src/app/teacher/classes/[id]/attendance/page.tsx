@@ -1,7 +1,9 @@
 /**
- * Mark Attendance — /teacher/classes/[id]/attendance
+ * Mark / Edit Attendance — /teacher/classes/[id]/attendance
  *
- * Lists enrolled students, lets teacher mark each one, then bulk-submits.
+ * - Fresh class: mark attendance for all enrolled students.
+ * - Already-submitted class: pre-fills existing statuses (edit mode).
+ * - Class topic and per-student notes are captured and stored.
  */
 
 'use client';
@@ -27,12 +29,12 @@ interface ClassInstanceDetail {
   startTime: string;
   batchBand: string;
   studentCount: number;
+  notes?: string; // previously saved class topic
 }
 
 interface AttendanceDraft {
-  bookingId: string;
-  studentId: string;
   status: AttendanceStatus;
+  notes: string;
 }
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; color: string }[] = [
@@ -44,10 +46,7 @@ const STATUS_OPTIONS: { value: AttendanceStatus; label: string; color: string }[
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 }
 
@@ -77,29 +76,53 @@ export default function MarkAttendancePage() {
 
   const [classDetail, setClassDetail] = useState<ClassInstanceDetail | null>(null);
   const [students, setStudents] = useState<StudentBooking[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, AttendanceStatus>>({});
+  const [drafts, setDrafts] = useState<Record<string, AttendanceDraft>>({});
+  const [classTopic, setClassTopic] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!user || !id) return;
     Promise.all([
       apiFetch(`/api/classes/instances/${id}`).then((r) => r.json()),
       apiFetch(`/api/classes/instances/${id}/bookings`).then((r) => r.json()),
+      apiFetch(`/api/classes/instances/${id}/attendance`).then((r) => r.json()),
     ])
-      .then(([detail, bookingsData]) => {
+      .then(([detail, bookingsData, attendanceData]) => {
         setClassDetail(detail);
+        if (detail.notes) setClassTopic(detail.notes);
+
         const bookings: StudentBooking[] = Array.isArray(bookingsData)
           ? bookingsData
           : bookingsData.bookings ?? [];
         setStudents(bookings);
-        // Default everyone to 'present'
-        const initialDrafts: Record<string, AttendanceStatus> = {};
+
+        const existingMap: Record<string, { status: string; notes: string }> =
+          attendanceData.attendance ?? {};
+
+        const hasExisting = Object.keys(existingMap).length > 0;
+        setIsEditMode(hasExisting);
+
+        const initialDrafts: Record<string, AttendanceDraft> = {};
         for (const b of bookings) {
-          initialDrafts[b.studentId] = 'present';
+          const existing = existingMap[b.studentId];
+          initialDrafts[b.studentId] = {
+            status: (existing?.status as AttendanceStatus) ?? 'present',
+            notes: existing?.notes ?? '',
+          };
+          if (b.dependentName) {
+            const depKey = `${b.studentId}::dep`;
+            const depExisting = existingMap[`${b.studentId}_dependent`];
+            initialDrafts[depKey] = {
+              status: (depExisting?.status as AttendanceStatus) ?? (existing?.status as AttendanceStatus) ?? 'present',
+              notes: depExisting?.notes ?? '',
+            };
+          }
         }
         setDrafts(initialDrafts);
       })
@@ -107,28 +130,46 @@ export default function MarkAttendancePage() {
       .finally(() => setLoading(false));
   }, [user, id, apiFetch]);
 
-  function setStatus(studentId: string, status: AttendanceStatus) {
-    setDrafts((prev) => ({ ...prev, [studentId]: status }));
+  function setStatus(key: string, status: AttendanceStatus) {
+    setDrafts((prev) => ({ ...prev, [key]: { ...prev[key], status } }));
+  }
+
+  function setNotes(key: string, notes: string) {
+    setDrafts((prev) => ({ ...prev, [key]: { ...prev[key], notes } }));
   }
 
   function markAll(status: AttendanceStatus) {
-    const all: Record<string, AttendanceStatus> = {};
-    for (const s of students) all[s.studentId] = status;
+    const all: Record<string, AttendanceDraft> = {};
+    for (const s of students) {
+      all[s.studentId] = { status, notes: drafts[s.studentId]?.notes ?? '' };
+      if (s.dependentName) {
+        const depKey = `${s.studentId}::dep`;
+        all[depKey] = { status, notes: drafts[depKey]?.notes ?? '' };
+      }
+    }
     setDrafts(all);
   }
 
-  // allMarked must include dependent draft keys for students who have a dependent
   const allMarked = students.length > 0 && students.every((s) =>
-    drafts[s.studentId] &&
-    (!s.dependentName || drafts[`${s.studentId}::dep`])
+    drafts[s.studentId]?.status &&
+    (!s.dependentName || drafts[`${s.studentId}::dep`]?.status)
   );
-  const presentCount = Object.values(drafts).filter((s) => s === 'present').length;
+  const presentCount = Object.values(drafts).filter((d) => d.status === 'present').length;
   const totalAttendees = students.length + students.filter((s) => !!s.dependentName).length;
 
   async function handleSubmit() {
     setSubmitError(null);
     setSubmitting(true);
     try {
+      // Save class topic to the instance notes field
+      if (classTopic.trim()) {
+        await apiFetch(`/api/classes/instances/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: classTopic.trim() }),
+        });
+      }
+
       const records: Array<{
         bookingId?: string;
         studentId: string;
@@ -138,19 +179,21 @@ export default function MarkAttendancePage() {
       }> = [];
 
       for (const s of students) {
+        const draft = drafts[s.studentId];
         records.push({
-          bookingId: s.bookingId,
+          bookingId: s.bookingId || undefined,
           studentId: s.studentId,
           classInstanceId: id,
-          status: drafts[s.studentId] ?? 'absent',
+          status: draft?.status ?? 'absent',
+          notes: draft?.notes?.trim() || undefined,
         });
-        // Emit a second record for the dependent (e.g. child joining with parent)
         if (s.dependentName) {
+          const depDraft = drafts[`${s.studentId}::dep`];
           records.push({
             studentId: `${s.studentId}_dependent`,
             classInstanceId: id,
-            status: drafts[`${s.studentId}::dep`] ?? drafts[s.studentId] ?? 'absent',
-            notes: `Marked with primary account (${s.studentName} — ${s.dependentName})`,
+            status: depDraft?.status ?? draft?.status ?? 'absent',
+            notes: `Marked with primary account (${s.studentName} — ${s.dependentName})${depDraft?.notes ? ': ' + depDraft.notes : ''}`,
           });
         }
       }
@@ -180,7 +223,7 @@ export default function MarkAttendancePage() {
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
         <span className="text-5xl">✅</span>
         <h2 className="font-heading text-xl font-semibold text-charcoal">
-          Attendance Submitted
+          {isEditMode ? 'Attendance Updated' : 'Attendance Submitted'}
         </h2>
         <p className="text-sm text-gray-500">Redirecting to classes…</p>
       </div>
@@ -194,8 +237,15 @@ export default function MarkAttendancePage() {
         <Link href="/teacher/classes" className="text-gray-400 hover:text-gray-600 mt-1">
           ← Back
         </Link>
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-charcoal">Mark Attendance</h1>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="font-heading text-2xl font-bold text-charcoal">
+              {isEditMode ? 'Edit Attendance' : 'Mark Attendance'}
+            </h1>
+            {isEditMode && (
+              <span className="badge badge-warning text-xs">Editing past record</span>
+            )}
+          </div>
           {classDetail && (
             <p className="text-sm text-gray-500 mt-0.5">
               {formatDate(classDetail.date)} · {classDetail.startTime} · Batch {classDetail.batchBand}
@@ -206,8 +256,22 @@ export default function MarkAttendancePage() {
 
       {/* Error */}
       {error && (
-        <div className="card border-red-300 bg-red-50 text-red-800 text-sm">
-          ⚠️ {error}
+        <div className="card border-red-300 bg-red-50 text-red-800 text-sm">⚠️ {error}</div>
+      )}
+
+      {/* Class topic */}
+      {!loading && (
+        <div className="card space-y-2">
+          <label className="block text-sm font-semibold text-charcoal">
+            What was taught today?
+          </label>
+          <input
+            type="text"
+            className="input text-sm w-full"
+            placeholder="e.g. Mayamalavagowla alankarams, Sa-Ri-Ga-Ma exercises…"
+            value={classTopic}
+            onChange={(e) => setClassTopic(e.target.value)}
+          />
         </div>
       )}
 
@@ -216,11 +280,7 @@ export default function MarkAttendancePage() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 font-medium mr-1">Mark all:</span>
           {STATUS_OPTIONS.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => markAll(value)}
-              className="btn-secondary text-xs px-3 py-1.5"
-            >
+            <button key={value} onClick={() => markAll(value)} className="btn-secondary text-xs px-3 py-1.5">
               {label}
             </button>
           ))}
@@ -258,36 +318,45 @@ export default function MarkAttendancePage() {
                 {student.violationCount >= 2 && (
                   <span className="badge badge-warning">⚠️ {student.violationCount} violations</span>
                 )}
+                <button
+                  onClick={() => setExpandedNotes((prev) => ({ ...prev, [student.studentId]: !prev[student.studentId] }))}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  {expandedNotes[student.studentId] ? 'Hide notes' : '+ Notes'}
+                </button>
               </div>
 
-              {/* Radio buttons — primary student */}
+              {/* Status radios — primary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {STATUS_OPTIONS.map(({ value, label, color }) => {
-                  const selected = drafts[student.studentId] === value;
+                  const selected = drafts[student.studentId]?.status === value;
                   return (
                     <label
                       key={value}
                       className={`flex items-center justify-center gap-1.5 border-2 rounded-lg px-3 py-2 cursor-pointer text-xs font-medium transition-all ${
-                        selected
-                          ? color
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                        selected ? color : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                       }`}
                     >
-                      <input
-                        type="radio"
-                        name={`status-${student.studentId}`}
-                        value={value}
-                        checked={selected}
-                        onChange={() => setStatus(student.studentId, value)}
-                        className="sr-only"
-                      />
+                      <input type="radio" name={`status-${student.studentId}`} value={value} checked={selected}
+                        onChange={() => setStatus(student.studentId, value)} className="sr-only" />
                       {label}
                     </label>
                   );
                 })}
               </div>
 
-              {/* Dependent row — child/second attendee joining with this student */}
+              {/* Notes field (expandable) */}
+              {expandedNotes[student.studentId] && (
+                <textarea
+                  rows={2}
+                  className="input text-xs w-full resize-none"
+                  placeholder={`Notes for ${student.studentName}…`}
+                  value={drafts[student.studentId]?.notes ?? ''}
+                  onChange={(e) => setNotes(student.studentId, e.target.value)}
+                />
+              )}
+
+              {/* Co-learner row */}
               {student.dependentName && (
                 <div className="pl-4 border-l-2 border-saffron-200 space-y-2">
                   <p className="text-xs text-gray-500">
@@ -297,24 +366,15 @@ export default function MarkAttendancePage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {STATUS_OPTIONS.map(({ value, label, color }) => {
                       const depKey = `${student.studentId}::dep`;
-                      const selected = drafts[depKey] === value;
+                      const selected = drafts[depKey]?.status === value;
                       return (
-                        <label
-                          key={value}
+                        <label key={value}
                           className={`flex items-center justify-center gap-1.5 border-2 rounded-lg px-3 py-2 cursor-pointer text-xs font-medium transition-all ${
-                            selected
-                              ? color
-                              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                            selected ? color : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                           }`}
                         >
-                          <input
-                            type="radio"
-                            name={`status-${student.studentId}-dep`}
-                            value={value}
-                            checked={selected}
-                            onChange={() => setStatus(`${student.studentId}::dep`, value)}
-                            className="sr-only"
-                          />
+                          <input type="radio" name={`status-${student.studentId}-dep`} value={value} checked={selected}
+                            onChange={() => setStatus(`${student.studentId}::dep`, value)} className="sr-only" />
                           {label}
                         </label>
                       );
@@ -328,23 +388,23 @@ export default function MarkAttendancePage() {
 
       {/* Submit error */}
       {submitError && (
-        <div className="card border-red-300 bg-red-50 text-red-800 text-sm">
-          ⚠️ {submitError}
-        </div>
+        <div className="card border-red-300 bg-red-50 text-red-800 text-sm">⚠️ {submitError}</div>
       )}
 
-      {/* Submit button */}
+      {/* Submit */}
       {!loading && students.length > 0 && (
         <div className="flex items-center justify-end gap-3 pt-2">
-          <Link href="/teacher/classes" className="btn-secondary">
-            Cancel
-          </Link>
+          <Link href="/teacher/classes" className="btn-secondary">Cancel</Link>
           <button
             onClick={handleSubmit}
             disabled={submitting || !allMarked}
             className="btn-primary disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : `Submit Attendance (${totalAttendees})`}
+            {submitting
+              ? (isEditMode ? 'Updating…' : 'Submitting…')
+              : isEditMode
+              ? `Update Attendance (${totalAttendees})`
+              : `Submit Attendance (${totalAttendees})`}
           </button>
         </div>
       )}
