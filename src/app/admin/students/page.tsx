@@ -91,6 +91,11 @@ export default function StudentsPage() {
   const [changeToBatchId, setChangeToBatchId] = useState('');
   const [changingBatch, setChangingBatch] = useState(false);
 
+  // Edit Dependent
+  const [dependentStudentId, setDependentStudentId] = useState<string | null>(null);
+  const [dependentNameInput, setDependentNameInput] = useState('');
+  const [savingDependent, setSavingDependent] = useState(false);
+
   // Filters
   const [filterBand, setFilterBand] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
@@ -211,6 +216,34 @@ export default function StudentsPage() {
       alert('Could not change batch. Please try again.');
     } finally {
       setChangingBatch(false);
+    }
+  }
+
+  async function handleSaveDependent(studentId: string) {
+    setSavingDependent(true);
+    try {
+      const res = await apiFetch(`/api/admin/students/${studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dependentName: dependentNameInput.trim() }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.userId === studentId
+            ? { ...s, dependentName: dependentNameInput.trim() || undefined }
+            : s
+        )
+      );
+      setDependentStudentId(null);
+      setWaiverSuccess(dependentNameInput.trim()
+        ? `Dependent "${dependentNameInput.trim()}" saved.`
+        : 'Dependent removed.');
+      setTimeout(() => setWaiverSuccess(null), 3000);
+    } catch {
+      alert('Could not save. Please try again.');
+    } finally {
+      setSavingDependent(false);
     }
   }
 
@@ -383,6 +416,15 @@ export default function StudentsPage() {
                   >
                     Change Batch
                   </button>
+                  <button
+                    onClick={() => {
+                      setDependentStudentId(dependentStudentId === s.userId ? null : s.userId);
+                      setDependentNameInput((s as unknown as Record<string, unknown>).dependentName as string ?? '');
+                    }}
+                    className="text-xs text-purple-600 hover:underline"
+                  >
+                    {(s as unknown as Record<string, unknown>).dependentName ? 'Edit Dependent' : '+ Add Dependent'}
+                  </button>
                   {(s.isPaymentCompulsoryThisCycle || (s.consecutiveViolationCount ?? 0) > 0) && (
                     <button
                       onClick={() => {
@@ -425,6 +467,40 @@ export default function StudentsPage() {
                     </button>
                     <button
                       onClick={() => setChangeBatchId(null)}
+                      className="btn-secondary text-xs px-3"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Inline dependent panel */}
+              {dependentStudentId === s.userId && (
+                <div className="px-5 pb-4 bg-purple-50 border-t border-purple-100">
+                  <p className="text-xs font-semibold text-purple-800 mt-3 mb-1">
+                    Dependent for {s.fullName}
+                  </p>
+                  <p className="text-xs text-purple-600 mb-2">
+                    Enter the child&apos;s name if a mother+child pair joins together. Leave blank to remove.
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    <input
+                      type="text"
+                      className="input text-xs flex-1"
+                      placeholder="Child's name (e.g. Rhea)"
+                      value={dependentNameInput}
+                      onChange={(e) => setDependentNameInput(e.target.value)}
+                    />
+                    <button
+                      onClick={() => handleSaveDependent(s.userId)}
+                      disabled={savingDependent}
+                      className="btn-primary text-xs px-3 whitespace-nowrap disabled:opacity-50"
+                    >
+                      {savingDependent ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setDependentStudentId(null)}
                       className="btn-secondary text-xs px-3"
                     >
                       Cancel

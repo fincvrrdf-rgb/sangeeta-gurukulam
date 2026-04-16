@@ -17,6 +17,7 @@ const UpdateStudentSchema = z.object({
   isActive: z.boolean().optional(),
   currentBatchBandId: z.string().optional(),
   notes: z.string().optional(),
+  dependentName: z.string().optional(),
 });
 
 export async function PATCH(
@@ -53,6 +54,7 @@ export async function PATCH(
     if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
     if (parsed.data.currentBatchBandId !== undefined) updates.currentBatchBandId = parsed.data.currentBatchBandId;
     if (parsed.data.notes !== undefined) updates.placementNotes = parsed.data.notes;
+    if (parsed.data.dependentName !== undefined) updates.dependentName = parsed.data.dependentName || null;
 
     await updateDoc(COLLECTIONS.STUDENT_PROFILES, id, updates);
 
