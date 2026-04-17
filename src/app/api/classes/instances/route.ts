@@ -14,6 +14,8 @@ import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const CreateInstanceSchema = z.object({
   slotId: z.string().min(1),
   scheduledDate: z.string().min(1),
