@@ -18,6 +18,11 @@ const UpdateStudentSchema = z.object({
   currentBatchBandId: z.string().optional(),
   notes: z.string().optional(),
   dependentName: z.string().optional(),
+  // Profile edit fields
+  fullName: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  guardianName: z.string().optional(),
+  billingRegion: z.enum(['india', 'abroad']).optional(),
 });
 
 export async function PATCH(
@@ -55,16 +60,28 @@ export async function PATCH(
     if (parsed.data.currentBatchBandId !== undefined) updates.currentBatchBandId = parsed.data.currentBatchBandId;
     if (parsed.data.notes !== undefined) updates.placementNotes = parsed.data.notes;
     if (parsed.data.dependentName !== undefined) updates.dependentName = parsed.data.dependentName || null;
+    if (parsed.data.fullName !== undefined) updates.fullName = parsed.data.fullName;
+    if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone;
+    if (parsed.data.guardianName !== undefined) updates.guardianName = parsed.data.guardianName || null;
+    if (parsed.data.billingRegion !== undefined) updates.billingRegion = parsed.data.billingRegion;
 
     await updateDoc(COLLECTIONS.STUDENT_PROFILES, id, updates);
 
-    // Sync isActive to the users collection too
+    // Sync related fields to other collections
+    const userUpdates: Record<string, unknown> = { updatedAt: nowISO() };
+    if (parsed.data.isActive !== undefined) userUpdates.isActive = parsed.data.isActive;
+    if (parsed.data.fullName !== undefined) userUpdates.displayName = parsed.data.fullName;
+    await updateDoc(COLLECTIONS.USERS, id, userUpdates);
+
     if (parsed.data.isActive !== undefined) {
-      await updateDoc(COLLECTIONS.USERS, id, { isActive: parsed.data.isActive, updatedAt: nowISO() });
-      // Enable/disable Firebase Auth account
       try {
         await adminAuth.updateUser(id, { disabled: !parsed.data.isActive });
       } catch { /* user may not exist in auth yet */ }
+    }
+    if (parsed.data.fullName !== undefined) {
+      try {
+        await adminAuth.updateUser(id, { displayName: parsed.data.fullName });
+      } catch { /* skip */ }
     }
 
     const { ipAddress, userAgent } = extractRequestMeta(request);

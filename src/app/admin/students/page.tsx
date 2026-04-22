@@ -98,6 +98,14 @@ export default function StudentsPage() {
   const [dependentNameInput, setDependentNameInput] = useState('');
   const [savingDependent, setSavingDependent] = useState(false);
 
+  // Edit Details
+  const [editStudentId, setEditStudentId] = useState<string | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editGuardianName, setEditGuardianName] = useState('');
+  const [editBillingRegion, setEditBillingRegion] = useState<'india' | 'abroad'>('india');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Filters
   const [filterBand, setFilterBand] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
@@ -255,6 +263,38 @@ export default function StudentsPage() {
       alert('Could not save. Please try again.');
     } finally {
       setSavingDependent(false);
+    }
+  }
+
+  async function handleSaveEdit(studentId: string) {
+    if (!editFullName.trim()) return;
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/api/admin/students/${studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: editFullName.trim(),
+          phone: editPhone.trim(),
+          guardianName: editGuardianName.trim(),
+          billingRegion: editBillingRegion,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.userId === studentId
+            ? { ...s, fullName: editFullName.trim(), phone: editPhone.trim(), guardianName: editGuardianName.trim() || null, billingRegion: editBillingRegion }
+            : s
+        )
+      );
+      setEditStudentId(null);
+      setWaiverSuccess(`Details updated for ${editFullName.trim()}.`);
+      setTimeout(() => setWaiverSuccess(null), 3000);
+    } catch {
+      alert('Could not save. Please try again.');
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -423,6 +463,18 @@ export default function StudentsPage() {
                   </div>
                   <button
                     onClick={() => {
+                      setEditStudentId(editStudentId === s.userId ? null : s.userId);
+                      setEditFullName(s.fullName);
+                      setEditPhone(s.phone ?? '');
+                      setEditGuardianName(s.guardianName ?? '');
+                      setEditBillingRegion(s.billingRegion === 'abroad' ? 'abroad' : 'india');
+                    }}
+                    className="text-xs text-teal-600 hover:underline"
+                  >
+                    Edit Details
+                  </button>
+                  <button
+                    onClick={() => {
                       setChangeBatchId(changeBatchId === s.userId ? null : s.userId);
                       setChangeToBatchId(s.currentBatchBandId ?? '');
                     }}
@@ -452,6 +504,73 @@ export default function StudentsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Inline Edit Details panel */}
+              {editStudentId === s.userId && (
+                <div className="px-5 pb-4 bg-teal-50 border-t border-teal-100">
+                  <p className="text-xs font-semibold text-teal-800 mt-3 mb-2">
+                    Edit details for {s.fullName}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-teal-700 mb-1 font-medium">Full Name *</label>
+                      <input
+                        type="text"
+                        className="input text-xs w-full"
+                        placeholder="Full name"
+                        value={editFullName}
+                        onChange={(e) => setEditFullName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-teal-700 mb-1 font-medium">Phone</label>
+                      <input
+                        type="tel"
+                        className="input text-xs w-full"
+                        placeholder="+91 98765 43210"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-teal-700 mb-1 font-medium">Guardian Name</label>
+                      <input
+                        type="text"
+                        className="input text-xs w-full"
+                        placeholder="Parent / guardian name"
+                        value={editGuardianName}
+                        onChange={(e) => setEditGuardianName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-teal-700 mb-1 font-medium">Billing Region</label>
+                      <select
+                        className="input text-xs w-full"
+                        value={editBillingRegion}
+                        onChange={(e) => setEditBillingRegion(e.target.value as 'india' | 'abroad')}
+                      >
+                        <option value="india">India</option>
+                        <option value="abroad">International</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => handleSaveEdit(s.userId)}
+                      disabled={savingEdit || !editFullName.trim()}
+                      className="btn-primary text-xs px-3 whitespace-nowrap disabled:opacity-50"
+                    >
+                      {savingEdit ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setEditStudentId(null)}
+                      className="btn-secondary text-xs px-3"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Inline Change Batch panel */}
               {changeBatchId === s.userId && (
