@@ -60,9 +60,7 @@ export async function GET(
         )
       : [];
 
-    const activeBatchProfiles = batchProfiles.filter(
-      (p) => p.isActive !== false && p.status !== 'inactive'
-    );
+    const activeBatchProfiles = batchProfiles.filter((p) => p.isActive !== false);
 
     // 2. Students who already have attendance for this instance (may include ones
     //    who have since moved batches — we still need to show them in edit mode).
@@ -110,7 +108,7 @@ export async function GET(
         bookingId:      '',
         studentId:      uid,
         studentName:    resolveName(p, user),
-        violationCount: (p.consecutiveViolations as number) ?? (p.consecutiveViolationCount as number) ?? 0,
+        violationCount: (p.consecutiveViolationCount as number) ?? 0,
         status:         'enrolled',
         dependentName:  (p.dependentName as string) ?? null,
       };

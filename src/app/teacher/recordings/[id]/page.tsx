@@ -10,6 +10,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { ref as storageRef, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
 type ReviewStatus = 'accepted' | 'needs_improvement' | 'rejected';
@@ -19,9 +21,9 @@ interface RecordingDetail {
   studentName: string;
   unitName: string;
   submittedAt: string;
-  audioUrl: string;
+  storagePath?: string;
   status: string;
-  existingFeedback?: string;
+  existingFeedback?: string | null;
   pitchScore?: number | null;
   rhythmScore?: number | null;
 }
@@ -45,6 +47,7 @@ export default function RecordingReviewPage() {
   const id = params.id as string;
 
   const [recording, setRecording] = useState<RecordingDetail | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -64,11 +67,25 @@ export default function RecordingReviewPage() {
     if (!user) return;
     apiFetch(`/api/recordings/${id}`)
       .then((r) => r.json())
-      .then((data: RecordingDetail) => {
-        setRecording(data);
-        if (data.existingFeedback) setFeedback(data.existingFeedback);
-        if (data.pitchScore != null) setPitchScore(String(data.pitchScore));
-        if (data.rhythmScore != null) setRhythmScore(String(data.rhythmScore));
+      .then(async (data) => {
+        // API returns the recording flat; guard against legacy { recording: {} } nesting
+        const rec: RecordingDetail & { audioUrl?: string | null } = data.recording ?? data;
+        setRecording(rec);
+        if (rec.existingFeedback) setFeedback(rec.existingFeedback);
+        if (rec.pitchScore != null) setPitchScore(String(rec.pitchScore));
+        if (rec.rhythmScore != null) setRhythmScore(String(rec.rhythmScore));
+        if (rec.audioUrl) {
+          // Supabase-stored recording: server already produced a signed URL
+          setAudioUrl(rec.audioUrl);
+        } else if (rec.storagePath) {
+          // Legacy Firebase-stored recording: resolve via the Firebase Client SDK
+          try {
+            const url = await getDownloadURL(storageRef(storage, rec.storagePath));
+            setAudioUrl(url);
+          } catch {
+            // Audio URL unavailable; player shows "not available" message
+          }
+        }
       })
       .catch((err) => setError(err.message ?? 'Failed to load recording.'))
       .finally(() => setLoading(false));
@@ -207,17 +224,19 @@ export default function RecordingReviewPage() {
       {/* Audio Player */}
       <div className="card space-y-3">
         <h2 className="section-title">Audio</h2>
-        {recording.audioUrl ? (
+        {audioUrl ? (
           <audio
             controls
-            src={recording.audioUrl}
+            src={audioUrl}
             className="w-full rounded-lg"
             preload="metadata"
           >
             Your browser does not support the audio element.
           </audio>
         ) : (
-          <p className="text-sm text-gray-400 italic">No audio URL available.</p>
+          <p className="text-sm text-gray-400 italic">
+            {recording.storagePath ? 'Loading audio…' : 'No audio available.'}
+          </p>
         )}
 
         <div className="flex items-center justify-between pt-1">

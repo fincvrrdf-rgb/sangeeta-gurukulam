@@ -106,6 +106,11 @@ export default function JoinClassPage() {
     window.open(link, '_blank', 'noopener,noreferrer');
   }
 
+  // The batch's single stable link (same for every class — API guarantees this)
+  const batchLink = instances.find((i) => i.meetLink || i.googleMeetLink);
+  const stableLink = batchLink ? (batchLink.meetLink || batchLink.googleMeetLink) : null;
+  const batchLabel = batchLink ? (batchLink.batchBand || batchLink.batchBandId) : '';
+
   // Group by date (YYYY-MM-DD)
   const grouped = new Map<string, ClassInstance[]>();
   for (const inst of instances) {
@@ -128,6 +133,28 @@ export default function JoinClassPage() {
       {attendanceMsg && (
         <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-2 text-sm text-green-800">
           ✅ {attendanceMsg}
+        </div>
+      )}
+
+      {/* Stable batch link — the same link for every class of this batch */}
+      {!loading && stableLink && (
+        <div className="card border-teal-200 bg-teal-50 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-teal-900">
+              Batch {batchLabel} — your class link
+            </p>
+            <p className="text-xs text-teal-700 truncate">
+              {stableLink.replace('https://', '')} · same link for every class
+            </p>
+          </div>
+          <a
+            href={stableLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold text-teal-700 border border-teal-400 rounded-lg px-3 py-1.5 hover:bg-teal-100 flex-shrink-0"
+          >
+            Open Link
+          </a>
         </div>
       )}
 

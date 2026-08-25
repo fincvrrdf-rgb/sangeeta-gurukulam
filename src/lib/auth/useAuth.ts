@@ -87,20 +87,22 @@ export function useAuth() {
 
   /**
    * Helper to make authenticated API calls.
-   * Automatically attaches the Bearer token.
+   * Calls user.getIdToken() on every request so expired tokens are refreshed
+   * automatically — the stored idToken becomes stale after 1 hour.
    */
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
-    if (!state.idToken) throw new Error('Not authenticated');
+    if (!state.user) throw new Error('Not authenticated');
+    const token = await state.user.getIdToken();
 
     return fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.idToken}`,
+        'Authorization': `Bearer ${token}`,
         ...options.headers,
       },
     });
-  }, [state.idToken]);
+  }, [state.user]);
 
   return {
     ...state,

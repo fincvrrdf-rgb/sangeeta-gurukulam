@@ -8,14 +8,11 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { ref, uploadBytesResumable } from 'firebase/storage';
-import { storage } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 import { ConsentGate } from '@/components/recording/ConsentGate';
 import { InAppRecorder } from '@/components/recording/InAppRecorder';
-import { STORAGE_PATHS } from '@/domain/constants';
 
 interface TeachingUnit {
   id: string;
@@ -120,25 +117,25 @@ export default function PracticeRecordPage() {
         ? 'mp4'
         : 'webm';
       const fileName = `${Date.now()}.${ext}`;
-      const storagePath = STORAGE_PATHS.recording(user.uid, selectedUnitId, weekOf, fileName);
 
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, pendingBlob, {
-        contentType: pendingMime,
+      // Upload through our server, which stores the file in Supabase Storage
+      // (free tier) — Firebase Storage rejected uploads on this project.
+      const uploadRes = await apiFetch('/api/recordings/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': pendingMime,
+          'x-teaching-unit-id': selectedUnitId,
+          'x-week-of': weekOf,
+          'x-file-name': fileName,
+        },
+        body: pendingBlob,
       });
-
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snap) => {
-            setUploadProgress(
-              Math.round((snap.bytesTransferred / snap.totalBytes) * 100),
-            );
-          },
-          reject,
-          () => resolve(),
-        );
-      });
+      setUploadProgress(100);
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({}));
+        throw new Error(body.error ?? `Upload failed (${uploadRes.status})`);
+      }
+      const { storagePath, storageProvider } = await uploadRes.json();
 
       // Save metadata
       setUploadStage('saving');
@@ -147,6 +144,7 @@ export default function PracticeRecordPage() {
         body: JSON.stringify({
           teachingUnitId: selectedUnitId,
           storagePath,
+          storageProvider: storageProvider ?? 'supabase',
           fileName,
           mimeType: pendingMime,
           fileSizeBytes: pendingBlob.size,
@@ -180,6 +178,15 @@ export default function PracticeRecordPage() {
     studentNote,
     apiFetch,
   ]);
+
+  const pendingBlobUrl = useMemo(() => {
+    if (!pendingBlob) return null;
+    return URL.createObjectURL(pendingBlob);
+  }, [pendingBlob]);
+
+  useEffect(() => {
+    return () => { if (pendingBlobUrl) URL.revokeObjectURL(pendingBlobUrl); };
+  }, [pendingBlobUrl]);
 
   const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? null;
   const isUploading = uploadStage === 'uploading' || uploadStage === 'saving';
@@ -325,7 +332,7 @@ export default function PracticeRecordPage() {
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                   <audio
                     controls
-                    src={URL.createObjectURL(pendingBlob)}
+                    src={pendingBlobUrl ?? undefined}
                     className="w-full rounded-lg"
                   />
                 </div>

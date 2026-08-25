@@ -110,6 +110,10 @@ export interface StudentProfile {
   longAbsenceActive: boolean;
   onboardingComplete: boolean;
   placementNotes: string;
+  isActive?: boolean;
+  dependentName?: string | null;
+  deletedAt?: string;
+  deletedBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -222,6 +226,8 @@ export interface BatchBand {
   code: BatchBandCode;
   name: string;              // e.g. 'Batch A - Beginner Foundation'
   description: string;
+  /** Stable Google Meet link for this batch — every class of the batch uses this one link */
+  meetLink?: string | null;
   lessonIdFrom: string;
   lessonIdTo: string;
   teachingUnitScopeNote: string | null;

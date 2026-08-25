@@ -51,9 +51,13 @@ export async function POST(
       reviewedAt: nowISO(),
     });
 
-    // Update recording status
+    // Update the recording. status stays in the recording lifecycle vocabulary
+    // ('submitted' → 'reviewed') — the verdict lives in reviewStatus, which is
+    // what the student history page and teacher list render.
     await updateDoc(COLLECTIONS.PRACTICE_RECORDINGS, recordingId, {
-      status,
+      status: 'reviewed',
+      reviewStatus: status,
+      reviewFeedback: feedback ?? null,
       lastReviewId: reviewId,
       lastReviewedAt: nowISO(),
       lastReviewedBy: auth.uid,
