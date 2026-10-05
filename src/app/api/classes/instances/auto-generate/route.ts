@@ -15,7 +15,8 @@ import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs, setDoc, deleteDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
-import { parseSchedule, addMinutesHHMM, startFor } from '@/lib/classes/student-schedule';
+import { parseSchedule, addMinutesHHMM, startFor, type StudentSchedule } from '@/lib/classes/student-schedule';
+import { DEFAULT_BATCH_MEET_LINKS } from '@/domain/constants';
 import type { ClassSlot } from '@/domain/types';
 import {
   loadBandCodes,
@@ -23,6 +24,8 @@ import {
   splitCanonicalSlots,
   deactivateDuplicateSlots,
   removeDuplicateInstances,
+  classKey,
+  classStudentIds,
 } from '@/lib/classes/dedupe';
 
 function addDays(date: Date, n: number): Date {
@@ -88,12 +91,10 @@ export async function POST(request: NextRequest) {
       { type: 'where', field: 'scheduledStartTime', op: '<=', value: toDateStr(rangeEnd) + 'T23:59:59' },
     ]);
 
-    // "batchCode|date" pairs that already have a class (any slot, any batch ID)
+    // Classes that already exist, by identity (batch+date / student+date)
     const existingKeys = new Set<string>();
     for (const inst of existingInstances) {
-      const startTime = inst.scheduledStartTime as string ?? '';
-      const dateStr = startTime.slice(0, 10);
-      existingKeys.add(`${batchKey(bandCodes, inst.batchBandId)}|${dateStr}`);
+      existingKeys.add(classKey(bandCodes, inst as Record<string, unknown> & { id: string }));
     }
 
     // Load teacher unavailability blocks
@@ -116,90 +117,99 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Default Meet links per batch code — same link for every class unless overridden
-    const DEFAULT_MEET_LINKS: Record<string, string> = {
-      'A': 'https://meet.google.com/spv-exsq-sfm',
-      'B': 'https://meet.google.com/spv-exsq-sfm',
-      'C': 'https://meet.google.com/iyq-wdqw-cfj',
-      'D': 'https://meet.google.com/iyq-wdqw-cfj',
-    };
-
-    // Per-student schedules: when any student in a batch has one, that batch's
-    // classes run on the union of those students' days (not the slot days).
+    // Students with their own schedule get their own classes (one per student
+    // per class day, at their own time). Batch classes are only generated for
+    // batches that still have students without a schedule.
     const profiles = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.STUDENT_PROFILES, []);
-    // Per weekday: students' own start/end; null start = use the batch's time
-    type DayPlan = { spans: { start: string | null; minutes: number }[] };
-    const studentPlan = new Map<string, { batchBandId: string; days: Map<number, DayPlan> }>();
+    const scheduled: { id: string; batchCode: string; batchBandId: string; sched: StudentSchedule }[] = [];
+    const unscheduledBatches = new Set<string>();
     for (const p of profiles) {
       if (p.isActive === false || !p.currentBatchBandId) continue;
-      const sched = parseSchedule(p.classSchedule);
-      if (!sched) continue;
       const code = batchKey(bandCodes, p.currentBatchBandId);
-      const plan = studentPlan.get(code) ?? { batchBandId: String(p.currentBatchBandId), days: new Map() };
-      for (const d of sched.days) {
-        const prev = plan.days.get(d) ?? { spans: [] };
-        prev.spans.push({ start: startFor(sched, d), minutes: sched.durationMinutes });
-        plan.days.set(d, prev);
-      }
-      studentPlan.set(code, plan);
+      const sched = parseSchedule(p.classSchedule);
+      if (sched) scheduled.push({ id: p.id, batchCode: code, batchBandId: String(p.currentBatchBandId), sched });
+      else unscheduledBatches.add(code);
     }
 
-    // What to generate: batch code → weekday → { start, end, slot }
-    type Planned = { batchBandId: string; start: string; end: string; slotId: string; teacherId: string; timezone: string };
-    const plan = new Map<string, Map<number, Planned>>();
     const slotsByBatch = new Map<string, typeof slots>();
     for (const slot of slots) {
       const code = batchKey(bandCodes, slot.batchBandId);
       slotsByBatch.set(code, [...(slotsByBatch.get(code) ?? []), slot]);
     }
-    for (const [code, batchSlots] of slotsByBatch) {
-      if (studentPlan.has(code)) continue; // student schedules take over below
-      const days = new Map<number, Planned>();
-      for (const slot of batchSlots) {
-        days.set(slot.dayOfWeek, {
+    // A batch keeps its slot classes only while someone in it has no schedule
+    // of their own (no classes are made for batches with no students)
+    const batchClassesWanted = (code: string) => unscheduledBatches.has(code);
+
+    type Planned = {
+      key: string;
+      id: string;
+      batchBandId: string;
+      studentIds: string[];
+      start: string;
+      end: string;
+      slotId: string;
+      teacherId: string;
+    };
+    const planFor = (dateStr: string, dow: number): Planned[] => {
+      const out: Planned[] = [];
+      for (const [code, batchSlots] of slotsByBatch) {
+        if (!batchClassesWanted(code)) continue;
+        const slot = batchSlots.find((x) => x.dayOfWeek === dow);
+        if (!slot) continue;
+        out.push({
+          key: `${code}|${dateStr}`,
+          id: `${code}_${dateStr}`,
           batchBandId: slot.batchBandId,
+          studentIds: [],
           start: slot.startTimeLocal || '05:30',
           end: slot.endTimeLocal || '06:30',
           slotId: slot.id,
           teacherId: slot.teacherId || '',
-          timezone: slot.timezone || 'Asia/Kolkata',
         });
       }
-      plan.set(code, days);
-    }
-    for (const [code, sp] of studentPlan) {
-      const batchSlots = slotsByBatch.get(code) ?? [];
-      const days = new Map<number, Planned>();
-      for (const [dow, dp] of sp.days) {
-        const slot = batchSlots.find((s) => s.dayOfWeek === dow) ?? batchSlots[0];
-        const fallback = slot?.startTimeLocal ?? '05:30';
-        // One class covering every student that day: earliest start → latest end
-        const starts = dp.spans.map((x) => x.start ?? fallback);
-        const ends = dp.spans.map((x, i) => addMinutesHHMM(starts[i], x.minutes));
-        days.set(dow, {
-          batchBandId: slot?.batchBandId ?? sp.batchBandId,
-          start: starts.sort()[0],
-          end: ends.sort()[ends.length - 1],
+      for (const st of scheduled) {
+        if (!st.sched.days.includes(dow)) continue;
+        const batchSlots = slotsByBatch.get(st.batchCode) ?? [];
+        const slot = batchSlots.find((x) => x.dayOfWeek === dow) ?? batchSlots[0];
+        const start = startFor(st.sched, dow) ?? slot?.startTimeLocal ?? '05:30';
+        out.push({
+          key: `stu:${st.id}|${dateStr}`,
+          id: `${st.id}_${dateStr}`,
+          batchBandId: st.batchBandId,
+          studentIds: [st.id],
+          start,
+          end: addMinutesHHMM(start, st.sched.durationMinutes),
           slotId: slot?.id ?? 'student-schedule',
           teacherId: slot?.teacherId || '',
-          timezone: 'Asia/Kolkata',
         });
       }
-      plan.set(code, days);
-    }
+      return out;
+    };
 
-    // Drop upcoming auto-created classes on days no scheduled student has any
-    // more (only if nothing was recorded on them)
-    let unscheduledRemoved = 0;
+    // Upcoming auto-created classes that no longer match the plan: remove them
+    // (unless something was recorded on them) or re-time them.
     const todayStr = toDateStr(today);
-    const stale = existingInstances.filter((inst) => {
-      const code = batchKey(bandCodes, inst.batchBandId);
+    const stale: Record<string, unknown>[] = [];
+    let retimed = 0;
+    for (const inst of existingInstances) {
       const dateStr = String(inst.scheduledStartTime ?? '').slice(0, 10);
-      if (!studentPlan.has(code) || !inst.autoGenerated || dateStr < todayStr) return false;
-      if (String(inst.status ?? 'scheduled') !== 'scheduled') return false;
-      const dow = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
-      return !plan.get(code)?.has(dow);
-    });
+      if (!inst.autoGenerated || inst.kind === 'extra' || dateStr < todayStr) continue;
+      if (String(inst.status ?? 'scheduled') !== 'scheduled') continue;
+      const key = classKey(bandCodes, inst as Record<string, unknown> & { id: string });
+      const p = planFor(dateStr, new Date(`${dateStr}T00:00:00Z`).getUTCDay()).find((x) => x.key === key);
+      if (!p) { stale.push(inst); continue; }
+      if (classStudentIds(inst).length === 0) continue; // batch slot classes keep their own times
+      const start = istTimestamp(dateStr, p.start);
+      const end = istTimestamp(dateStr, p.end);
+      if (inst.scheduledStartTime === start && inst.scheduledEndTime === end) continue;
+      await updateDoc(COLLECTIONS.CLASS_INSTANCES, inst.id as string, {
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        updatedAt: nowISO(),
+      });
+      retimed++;
+    }
+    let unscheduledRemoved = 0;
     if (stale.length > 0) {
       const withRecords = new Set<string>();
       for (let i = 0; i < stale.length; i += 30) {
@@ -211,29 +221,9 @@ export async function POST(request: NextRequest) {
       for (const inst of stale) {
         if (withRecords.has(inst.id as string)) continue;
         await deleteDoc(COLLECTIONS.CLASS_INSTANCES, inst.id as string);
-        existingKeys.delete(`${batchKey(bandCodes, inst.batchBandId)}|${String(inst.scheduledStartTime).slice(0, 10)}`);
+        existingKeys.delete(classKey(bandCodes, inst as Record<string, unknown> & { id: string }));
         unscheduledRemoved++;
       }
-    }
-
-    // Re-time upcoming auto-created classes whose schedule changed
-    let retimed = 0;
-    for (const inst of existingInstances) {
-      const code = batchKey(bandCodes, inst.batchBandId);
-      const dateStr = String(inst.scheduledStartTime ?? '').slice(0, 10);
-      if (!studentPlan.has(code) || !inst.autoGenerated || dateStr < todayStr) continue;
-      if (String(inst.status ?? 'scheduled') !== 'scheduled') continue;
-      const p = plan.get(code)?.get(new Date(`${dateStr}T00:00:00Z`).getUTCDay());
-      if (!p) continue;
-      const start = istTimestamp(dateStr, p.start);
-      const end = istTimestamp(dateStr, p.end);
-      if (inst.scheduledStartTime === start && inst.scheduledEndTime === end) continue;
-      await updateDoc(COLLECTIONS.CLASS_INSTANCES, inst.id as string, {
-        scheduledStartTime: start,
-        scheduledEndTime: end,
-        updatedAt: nowISO(),
-      });
-      retimed++;
     }
 
     let created = 0;
@@ -241,38 +231,33 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < daysAhead; i++) {
       const date = addDays(today, i);
-      const dayOfWeek = date.getDay(); // 0=Sunday
       const dateStr = toDateStr(date);
 
-      for (const [batchCode, days] of plan) {
-        const p = days.get(dayOfWeek);
-        if (!p) continue;
-
-        const key = `${batchCode}|${dateStr}`;
-        if (existingKeys.has(key)) continue;
-
-        // Check teacher unavailability
-        if (p.teacherId && blockedDaysByTeacher.get(p.teacherId)?.has(dateStr)) {
-          continue;
-        }
+      for (const p of planFor(dateStr, date.getDay())) {
+        if (existingKeys.has(p.key)) continue;
+        if (p.teacherId && blockedDaysByTeacher.get(p.teacherId)?.has(dateStr)) continue;
 
         try {
-          const defaultLink = DEFAULT_MEET_LINKS[batchCode] ?? null;
+          const batchCode = batchKey(bandCodes, p.batchBandId);
+          // Batch classes store the batch link; a student's own class resolves
+          // its link (the student's own Meet room) when read.
+          const link = p.studentIds.length ? null : (DEFAULT_BATCH_MEET_LINKS[batchCode] ?? null);
 
           // Deterministic ID so concurrent calls (cron + manual) can't duplicate
-          const instanceId = `${batchCode}_${dateStr}`;
-          await setDoc(COLLECTIONS.CLASS_INSTANCES, instanceId, {
+          await setDoc(COLLECTIONS.CLASS_INSTANCES, p.id, {
             slotId: p.slotId,
             teacherId: p.teacherId,
             batchBandId: p.batchBandId,
+            studentIds: p.studentIds,
+            kind: 'regular',
             scheduledStartTime: istTimestamp(dateStr, p.start),
             scheduledEndTime: istTimestamp(dateStr, p.end),
-            timezone: p.timezone,
+            timezone: 'Asia/Kolkata',
             status: 'scheduled',
             cancellationReason: null,
             rescheduleTargetInstanceId: null,
-            googleMeetLink: defaultLink,
-            meetLink: defaultLink,
+            googleMeetLink: link,
+            meetLink: link,
             googleCalendarEventId: null,
             lessonPlanItemId: null,
             teachingUnitId: null,
@@ -281,10 +266,10 @@ export async function POST(request: NextRequest) {
             generatedBy: actorId,
             createdAt: nowISO(),
           });
-          existingKeys.add(key);
+          existingKeys.add(p.key);
           created++;
         } catch (e) {
-          errors.push(`${dateStr} batch ${batchCode}: ${e instanceof Error ? e.message : 'error'}`);
+          errors.push(`${dateStr} ${p.key}: ${e instanceof Error ? e.message : 'error'}`);
         }
       }
     }

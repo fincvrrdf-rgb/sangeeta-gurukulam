@@ -13,7 +13,9 @@ import { COLLECTIONS, DEFAULT_BATCH_MEET_LINKS } from '@/domain/constants';
 import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
-import { parseSchedule, startFor, addMinutesHHMM } from '@/lib/classes/student-schedule';
+import { parseSchedule } from '@/lib/classes/student-schedule';
+import { classStudentIds } from '@/lib/classes/dedupe';
+import { loadLinkContext, resolveClassLink } from '@/lib/classes/links';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,34 +84,20 @@ export async function GET(request: NextRequest) {
         || ((await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, batchBandId))?.code as string | undefined)
         || '';
 
+      const mySchedule = parseSchedule(studentProfile?.classSchedule);
       instances = instances.filter((i) => {
+        const raw = i as unknown as Record<string, unknown>;
+        const ids = classStudentIds(raw);
+        // Own, group and extra classes: only if this student is in it
+        if (ids.length) return ids.includes(auth.uid);
+        // Batch classes: only for students without their own schedule
+        if (mySchedule) return false;
         // Primary match: exact batchBandId
         if (i.batchBandId === batchBandId) return true;
         // Fallback: same batch code (handles re-seeded IDs)
         if (studentBatchCode && batchCodeMap[i.batchBandId] === studentBatchCode) return true;
         return false;
       });
-
-      // A student with their own schedule only sees classes on their days
-      const mySchedule = parseSchedule(studentProfile?.classSchedule);
-      if (mySchedule) {
-        instances = instances
-          .filter((i) => {
-            const date = String(i.scheduledStartTime ?? '').slice(0, 10);
-            return mySchedule.days.includes(new Date(`${date}T00:00:00Z`).getUTCDay());
-          })
-          .map((i) => {
-            // Show the student their own start/end that day
-            const date = String(i.scheduledStartTime ?? '').slice(0, 10);
-            const own = startFor(mySchedule, new Date(`${date}T00:00:00Z`).getUTCDay());
-            if (!own) return i;
-            return {
-              ...i,
-              scheduledStartTime: `${date}T${own}:00+05:30`,
-              scheduledEndTime: `${date}T${addMinutesHHMM(own, mySchedule.durationMinutes)}:00+05:30`,
-            };
-          });
-      }
     }
 
     // Step 3: compute enrolled learner count per batch (students + co-learners)
@@ -129,12 +117,24 @@ export async function GET(request: NextRequest) {
     // ONE stable link per batch: the band's stored meetLink (admin-editable) or the
     // batch default. Per-instance googleMeetLink is deliberately ignored so every
     // date of a batch shows the same link students already use.
+    const linkCtx = await loadLinkContext();
     instances = instances.map((i) => {
       const raw = i as unknown as Record<string, unknown>;
       const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? '';
-      const link = batchLinkMap[i.batchBandId] || DEFAULT_BATCH_MEET_LINKS[code] || null;
-      const enrolledCount = enrolledByBatch[i.batchBandId] ?? 0;
-      return { ...i, batchBand: code, meetLink: link, googleMeetLink: link, enrolledCount };
+      const ids = classStudentIds(raw);
+      const link = resolveClassLink(raw, linkCtx)
+        || batchLinkMap[i.batchBandId] || DEFAULT_BATCH_MEET_LINKS[code] || null;
+      const enrolledCount = ids.length || (enrolledByBatch[i.batchBandId] ?? 0);
+      return {
+        ...i,
+        batchBand: code,
+        meetLink: link,
+        googleMeetLink: link,
+        enrolledCount,
+        kind: (raw.kind as string) ?? 'regular',
+        isGroup: ids.length > 1,
+        groupSize: ids.length,
+      };
     });
 
     return Response.json({ success: true, instances });

@@ -26,6 +26,25 @@ export function batchKey(bandCodes: Record<string, string>, batchBandId: unknown
   return bandCodes[id] ?? id;
 }
 
+/** Participants of a class: `studentIds` on per-student / group / extra classes. */
+export function classStudentIds(inst: Record<string, unknown>): string[] {
+  return Array.isArray(inst.studentIds) ? (inst.studentIds as unknown[]).map(String).filter(Boolean) : [];
+}
+
+/**
+ * Identity of a class for duplicate detection:
+ *  - extra classes are always distinct (keyed by their own ID)
+ *  - a student's own / group class: its students + date
+ *  - a batch class: batch code + date
+ */
+export function classKey(bandCodes: Record<string, string>, inst: Doc): string {
+  const date = String(inst.scheduledStartTime ?? '').slice(0, 10);
+  if (inst.kind === 'extra') return `extra:${inst.id}`;
+  const ids = classStudentIds(inst);
+  if (ids.length) return `stu:${[...ids].sort().join(',')}|${date}`;
+  return `${batchKey(bandCodes, inst.batchBandId)}|${date}`;
+}
+
 /**
  * Pick one slot per batch + weekday. Among duplicates, the start time shared
  * by most of them wins (ties → most recently updated), so a stray slot with
@@ -89,7 +108,8 @@ export interface DedupeResult {
 }
 
 /**
- * Remove duplicate class instances (same batch + same date). Keeps the copy
+ * Remove duplicate class instances (same batch + date, or same student(s) +
+ * date; extra classes are never treated as duplicates). Keeps the copy
  * that has attendance, else a non-cancelled one, else the oldest. Never
  * deletes an instance that has attendance records.
  */
@@ -109,9 +129,8 @@ export async function removeDuplicateInstances(
 
   const groups = new Map<string, Doc[]>();
   for (const inst of instances) {
-    const date = String(inst.scheduledStartTime ?? '').slice(0, 10);
-    if (!date) continue;
-    const key = `${batchKey(bandCodes, inst.batchBandId)}|${date}`;
+    if (!String(inst.scheduledStartTime ?? '').slice(0, 10)) continue;
+    const key = classKey(bandCodes, inst);
     groups.set(key, [...(groups.get(key) ?? []), inst]);
   }
 
