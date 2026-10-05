@@ -1,7 +1,10 @@
 /**
  * API: POST /api/attendance/auto
  *
- * Automatic attendance tracking — called when a student clicks "Join Google Meet".
+ * Automatic attendance tracking — called when a student clicks their batch's
+ * Join link. classInstanceId is optional: without it, today's class for the
+ * student's batch is found automatically (duplicate copies of the same class
+ * count as one).
  * Records join time. If student joins >15 minutes late, marks as absent.
  * If student joins on time, marks as attended. If late (≤15 min), marks as late.
  *
@@ -19,29 +22,68 @@ import { createNotification } from '@/services/notifications/create';
 import type { ClassInstance, AppSettings, LongAbsenceRecord, AbsenceRecord, AttendanceRecord } from '@/domain/types';
 import type { AttendanceStatus } from '@/domain/enums';
 import { z } from 'zod';
+import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
+
+function istToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+/** Today's class for the student's batch (closest to now), plus all copies of it. */
+async function findTodaysClass(studentId: string): Promise<{ id: string; copyIds: string[] } | null> {
+  const profile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, studentId);
+  const bandId = profile?.currentBatchBandId as string | undefined;
+  if (!bandId) return null;
+
+  const bandCodes = await loadBandCodes();
+  const myBatch = batchKey(bandCodes, bandId);
+  const today = istToday();
+  const todays = (await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
+    { type: 'where', field: 'scheduledStartTime', op: '>=', value: `${today}T00:00:00+05:30` },
+    { type: 'where', field: 'scheduledStartTime', op: '<=', value: `${today}T23:59:59+05:30` },
+  ])).filter((i) => batchKey(bandCodes, i.batchBandId) === myBatch && !String(i.status ?? '').includes('cancel'));
+  if (todays.length === 0) return null;
+
+  const now = Date.now();
+  const closest = [...todays].sort(
+    (a, b) =>
+      Math.abs(new Date(String(a.scheduledStartTime)).getTime() - now) -
+      Math.abs(new Date(String(b.scheduledStartTime)).getTime() - now),
+  )[0];
+  return { id: closest.id, copyIds: todays.map((i) => i.id) };
+}
 
 const AutoAttendanceSchema = z.object({
-  classInstanceId: z.string().min(1),
+  classInstanceId: z.string().min(1).optional(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth(request, ['student']);
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const parsed = AutoAttendanceSchema.safeParse(body);
 
     if (!parsed.success) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { classInstanceId } = parsed.data;
     const studentId = auth.uid;
+    let classInstanceId = parsed.data.classInstanceId;
+    let copyIds = classInstanceId ? [classInstanceId] : [];
+    if (!classInstanceId) {
+      const found = await findTodaysClass(studentId);
+      if (!found) {
+        return Response.json({ success: true, recorded: false, message: 'No class scheduled for your batch today.' });
+      }
+      classInstanceId = found.id;
+      copyIds = found.copyIds;
+    }
 
-    // Check if attendance already recorded for this class
-    const existingAttendance = await queryDocs<AttendanceRecord>(COLLECTIONS.ATTENDANCE_RECORDS, [
+    // Check if attendance already recorded for this class (or a duplicate copy of it)
+    const existingAttendance = (await queryDocs<AttendanceRecord>(COLLECTIONS.ATTENDANCE_RECORDS, [
       { type: 'where', field: 'studentId', op: '==', value: studentId },
-      { type: 'where', field: 'classInstanceId', op: '==', value: classInstanceId },
-    ]);
+    ])).filter((r) => copyIds.includes(r.classInstanceId));
 
     if (existingAttendance.length > 0) {
       return Response.json({ success: true, message: 'Attendance already recorded', attendanceId: existingAttendance[0].id });
