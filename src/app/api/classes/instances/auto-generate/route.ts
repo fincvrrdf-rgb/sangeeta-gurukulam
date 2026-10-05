@@ -30,6 +30,12 @@ function istTimestamp(dateStr: string, timeHHMM: string): string {
   return `${dateStr}T${timeHHMM}:00+05:30`;
 }
 
+// Vercel cron jobs call with GET; without this the nightly run got a 405 and
+// no classes were generated (the Auto-Schedule button has been removed).
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Allow cron or teacher/admin
