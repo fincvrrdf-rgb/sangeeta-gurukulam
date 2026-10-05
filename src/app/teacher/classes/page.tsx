@@ -201,8 +201,11 @@ function StudentRow({
         </p>
         <p className="text-xs text-gray-400">{istTime(student.start ?? cls.start)} – {istTime(student.end ?? cls.end)}</p>
         {cls.movedFrom && <p className="text-[11px] text-gray-400">moved from {formatDay(cls.movedFrom)}</p>}
-        <button onClick={() => setEditingClass((v) => !v)} className="text-[11px] text-teal-600 hover:text-teal-800">
-          {editingClass ? 'Close' : 'Edit class'}
+        <button
+          onClick={() => setEditingClass((v) => !v)}
+          className="mt-1 text-[11px] font-medium text-teal-700 border border-teal-300 rounded-md px-1.5 py-0.5 hover:bg-teal-50"
+        >
+          {editingClass ? 'Close' : '✎ Change date / time'}
         </button>
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 tabular-nums">
@@ -853,6 +856,10 @@ function AddClassForm({
   return (
     <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 space-y-3">
       <div>
+        <p className="text-[11px] text-gray-500 mb-2">
+          Took a class on a different day? Add it with that date here, then mark attendance and minutes in the student&apos;s table below.
+          To move an existing class, use <strong>✎ Change date / time</strong> on its row.
+        </p>
         <p className="text-xs font-medium text-gray-600 mb-1.5">Students (pick two or more for a group class)</p>
         <div className="flex flex-wrap gap-1.5">
           {students.map((s) => (
@@ -872,8 +879,8 @@ function AddClassForm({
       </div>
       <div className="flex items-end gap-3 flex-wrap">
         <label className="text-xs text-gray-600">
-          Date
-          <input type="date" value={date} min={today} onChange={(e) => setDate(e.target.value)} className="input text-sm py-1 px-2 mt-1 block" />
+          Date (past days too)
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input text-sm py-1 px-2 mt-1 block" />
         </label>
         <label className="text-xs text-gray-600">
           Start
