@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
-import { COLLECTIONS } from '@/domain/constants';
+import { COLLECTIONS, DEFAULT_BATCH_MEET_LINKS } from '@/domain/constants';
 import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
@@ -51,19 +51,17 @@ export async function GET(request: NextRequest) {
 
     let instances = await queryDocs<ClassInstance>(COLLECTIONS.CLASS_INSTANCES, constraints);
 
-    const DEFAULT_MEET_LINKS: Record<string, string> = {
-      A: 'https://meet.google.com/spv-exsq-sfm',
-      B: 'https://meet.google.com/spv-exsq-sfm',
-      C: 'https://meet.google.com/iyq-wdqw-cfj',
-      D: 'https://meet.google.com/iyq-wdqw-cfj',
-    };
-
-    // Step 1: resolve ALL batchBandId → code BEFORE filtering (needed for fallback match)
+    // Step 1: resolve ALL batchBandId → code BEFORE filtering (needed for fallback match).
+    // Also capture each band's stable meetLink — every class of a batch uses ONE link.
     const allBandIds = [...new Set(instances.map((i) => i.batchBandId).filter(Boolean))];
     const batchCodeMap: Record<string, string> = {};
+    const batchLinkMap: Record<string, string> = {};
     for (const bandId of allBandIds) {
       const band = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, bandId);
-      if (band) batchCodeMap[bandId] = band.code as string;
+      if (band) {
+        batchCodeMap[bandId] = band.code as string;
+        if (band.meetLink) batchLinkMap[bandId] = band.meetLink as string;
+      }
     }
 
     // Step 2: role-based filtering
@@ -105,12 +103,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Step 4: attach batch code + meet link + enrolled count to every instance
+    // Step 4: attach batch code + meet link + enrolled count to every instance.
+    // ONE stable link per batch: the band's stored meetLink (admin-editable) or the
+    // batch default. Per-instance googleMeetLink is deliberately ignored so every
+    // date of a batch shows the same link students already use.
     instances = instances.map((i) => {
       const raw = i as unknown as Record<string, unknown>;
       const code = batchCodeMap[i.batchBandId] ?? (raw.batchBand as string) ?? '';
-      const instanceLink = (raw.meetLink as string) || (raw.googleMeetLink as string) || '';
-      const link = instanceLink || DEFAULT_MEET_LINKS[code] || null;
+      const link = batchLinkMap[i.batchBandId] || DEFAULT_BATCH_MEET_LINKS[code] || null;
       const enrolledCount = enrolledByBatch[i.batchBandId] ?? 0;
       return { ...i, batchBand: code, meetLink: link, googleMeetLink: link, enrolledCount };
     });

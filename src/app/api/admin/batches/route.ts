@@ -8,7 +8,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs, updateDoc, createDoc, nowISO } from '@/lib/firebase/firestore';
-import { COLLECTIONS } from '@/domain/constants';
+import { COLLECTIONS, DEFAULT_BATCH_MEET_LINKS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
 
@@ -27,15 +27,23 @@ const UpdateBatchBandSchema = z.object({
   maxCapacityPerSlot: z.number().int().positive().optional(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
+  // Stable per-batch meet link; empty string clears it (falls back to default)
+  meetLink: z.string().url().or(z.literal('')).optional(),
 }).refine((data) => Object.keys(data).length > 1, { message: 'At least one field to update must be provided' });
 
 export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['teacher', 'super_admin']);
 
-    const batches = await queryDocs(COLLECTIONS.BATCH_BANDS, []);
+    const batches = await queryDocs<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, []);
 
-    return Response.json({ success: true, batches });
+    // Attach the effective stable link: stored meetLink → batch default
+    const enriched = batches.map((b) => ({
+      ...b,
+      meetLink: (b.meetLink as string) || DEFAULT_BATCH_MEET_LINKS[b.code as string] || null,
+    }));
+
+    return Response.json({ success: true, batches: enriched });
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -51,10 +59,10 @@ export async function POST(request: NextRequest) {
       const existing = await queryDocs<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, []);
       const existingCodes = new Set(existing.map((b) => b.code));
       const STANDARD_BATCHES = [
-        { code: 'A', name: 'Batch A — Mon/Wed Morning', description: 'Monday & Wednesday 5:30–6:30 AM IST' },
-        { code: 'B', name: 'Batch B — Mon/Wed Evening', description: 'Monday & Wednesday 4:30–5:30 PM IST' },
-        { code: 'C', name: 'Batch C — Tue/Thu Morning', description: 'Tuesday & Thursday 5:30–6:30 AM IST' },
-        { code: 'D', name: 'Batch D — Tue/Thu Evening', description: 'Tuesday & Thursday 4:30–5:30 PM IST' },
+        { code: 'A', name: 'Batch A — Mon/Wed Morning', description: 'Monday & Wednesday 5:30–6:30 AM IST', meetLink: 'https://meet.google.com/spv-exsq-sfm' },
+        { code: 'B', name: 'Batch B — Mon/Wed Evening', description: 'Monday & Wednesday 4:30–5:30 PM IST', meetLink: 'https://meet.google.com/spv-exsq-sfm' },
+        { code: 'C', name: 'Batch C — Tue/Thu Morning', description: 'Tuesday & Thursday 5:30–6:30 AM IST', meetLink: 'https://meet.google.com/iyq-wdqw-cfj' },
+        { code: 'D', name: 'Batch D — Tue/Thu Evening', description: 'Tuesday & Thursday 4:30–5:30 PM IST', meetLink: 'https://meet.google.com/iyq-wdqw-cfj' },
       ];
       let created = 0;
       for (const b of STANDARD_BATCHES) {
@@ -63,6 +71,7 @@ export async function POST(request: NextRequest) {
             code: b.code,
             name: b.name,
             description: b.description,
+            meetLink: b.meetLink,
             lessonIdFrom: '',
             lessonIdTo: '',
             teachingUnitScopeNote: null,

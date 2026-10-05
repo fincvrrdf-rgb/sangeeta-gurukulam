@@ -117,7 +117,9 @@ export function InAppRecorder({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream, { mimeType });
+      // 64 kbps opus is plenty for voice and keeps a 5-minute recording
+      // around 2.4 MB — safely under serverless request-body limits.
+      const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 64000 });
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 

@@ -21,14 +21,14 @@ export async function GET(request: NextRequest) {
       students.push({
         id: p.userId as string,
         name: (p.fullName as string) || (p.userId as string),
-        batchBand: (p.currentBatchBandCode as string) || '',
+        batchBand: (p.currentBatchBandId as string) || '',
       });
       // Include co-learner as a virtual entry so they can be assessed separately
       if (p.dependentName) {
         students.push({
           id: `${p.userId as string}_dependent`,
           name: `${p.dependentName as string} (co-learner with ${(p.fullName as string) || p.userId})`,
-          batchBand: (p.currentBatchBandCode as string) || '',
+          batchBand: (p.currentBatchBandId as string) || '',
         });
       }
     }

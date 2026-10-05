@@ -35,10 +35,12 @@ service firebase.storage {
     // Student can upload their own recordings (with consent).
     // Teacher and admin can read any student's recordings.
     // No public access.
+    // Write uses UID equality (not role claim) so uploads succeed even before
+    // the custom-claims token is refreshed after account creation.
     match /recordings/{studentId}/{allPaths=**} {
       allow read: if isSuperAdmin() || isTeacher()
-                  || (isStudent() && request.auth.uid == studentId);
-      allow write: if (isStudent() && request.auth.uid == studentId
+                  || (isAuthenticated() && request.auth.uid == studentId);
+      allow write: if (isAuthenticated() && request.auth.uid == studentId
                        && request.resource.size < 50 * 1024 * 1024)  // 50 MB max
                    || isSuperAdmin();
     }

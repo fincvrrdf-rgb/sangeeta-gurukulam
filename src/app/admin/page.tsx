@@ -151,6 +151,8 @@ export default function AdminDashboard() {
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState<number | null>(null);
+  const [deduping, setDeduping] = useState(false);
+  const [dedupMsg, setDedupMsg] = useState<string | null>(null);
 
   const runBootstrap = async () => {
     setBootstrapping(true);
@@ -168,6 +170,28 @@ export default function AdminDashboard() {
       setBootstrapMsg('Network error. Try again.');
     } finally {
       setBootstrapping(false);
+    }
+  };
+
+  const runDedup = async () => {
+    setDeduping(true);
+    setDedupMsg('Scanning for duplicate class instances…');
+    try {
+      const r = await apiFetch('/api/admin/dedup-instances', { method: 'POST' });
+      const data = await r.json();
+      if (data.success) {
+        setDedupMsg(
+          data.documentsDeleted > 0
+            ? `Removed ${data.documentsDeleted} duplicate(s) across ${data.duplicateGroupsFound} slot-date group(s). Refresh the teacher schedule to confirm.`
+            : 'No duplicates found — schedule is clean.'
+        );
+      } else {
+        setDedupMsg(data.error ?? 'Cleanup failed. Try again.');
+      }
+    } catch {
+      setDedupMsg('Network error. Try again.');
+    } finally {
+      setDeduping(false);
     }
   };
 
@@ -261,6 +285,27 @@ export default function AdminDashboard() {
           )}
         </section>
       )}
+
+      {/* Duplicate class instance cleanup */}
+      <section className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🗑️</span>
+          <h2 className="font-semibold text-red-900 text-sm">Fix Duplicate Classes</h2>
+        </div>
+        <p className="text-sm text-red-800">
+          If the teacher schedule shows multiple copies of the same class on the same day, run this to remove the duplicates. Keeps one copy of each class, deletes the rest.
+        </p>
+        <button
+          onClick={runDedup}
+          disabled={deduping}
+          className="w-full bg-red-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-red-800 disabled:opacity-50 transition-colors"
+        >
+          {deduping ? 'Removing duplicates…' : 'Remove Duplicate Classes'}
+        </button>
+        {dedupMsg && (
+          <p className="text-xs text-red-900 font-medium">{dedupMsg}</p>
+        )}
+      </section>
 
       {/* System Stats */}
       <section>

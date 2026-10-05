@@ -1,9 +1,9 @@
 /**
  * Manage Classes — /teacher/classes
  *
- * Simple view: upcoming classes grouped by day.
- * Click "Edit time" on any class to change its timing inline.
- * Auto-Schedule generates instances from the recurring schedule.
+ * Batch links panel at the top: each batch has ONE stable Meet link.
+ * Below it, upcoming classes grouped by day (attendance, edit time,
+ * cancel, delete). No per-class links — the batch link is the link.
  */
 
 'use client';
@@ -32,6 +32,13 @@ interface ClassSlot {
   id: string;
 }
 
+interface BatchLinkRow {
+  id: string;
+  code: string;
+  name: string;
+  meetLink: string | null;
+}
+
 function istDateOffset(days: number): string {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -39,7 +46,6 @@ function istDateOffset(days: number): string {
   return fmt.format(new Date(Date.now() + days * 86400000));
 }
 
-function todayIST(): string { return istDateOffset(0); }
 function in14DaysIST(): string { return istDateOffset(14); }
 function minus7DaysIST(): string { return istDateOffset(-7); }
 
@@ -127,9 +133,11 @@ export default function ManageClassesPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Auto-schedule
-  const [generating, setGenerating] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+
+  // One stable link per batch
+  const [batchLinks, setBatchLinks] = useState<BatchLinkRow[]>([]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -138,17 +146,38 @@ export default function ManageClassesPage() {
     Promise.all([
       apiFetch(`/api/classes/instances?from=${from}&to=${to}`).then((r) => r.json()),
       apiFetch('/api/classes/slots').then((r) => r.json()),
+      apiFetch('/api/admin/batches').then((r) => r.json()).catch(() => ({ batches: [] })),
     ])
-      .then(([instData, slotData]) => {
+      .then(([instData, slotData, batchData]) => {
         const raw: Record<string, unknown>[] = Array.isArray(instData)
           ? instData
           : instData.instances ?? instData.data ?? [];
         setInstances(raw.map(normalizeInstance));
         setSlots(Array.isArray(slotData) ? slotData : slotData.slots ?? slotData.data ?? []);
+        const bands: Record<string, unknown>[] = batchData.batches ?? [];
+        setBatchLinks(
+          bands
+            .filter((b) => b.isActive !== false)
+            .map((b) => ({
+              id: b.id as string,
+              code: (b.code as string) ?? '',
+              name: (b.name as string) ?? '',
+              meetLink: (b.meetLink as string) ?? null,
+            }))
+            .sort((a, b) => a.code.localeCompare(b.code)),
+        );
       })
       .catch((err) => setError(err.message ?? 'Failed to load classes.'))
       .finally(() => setLoading(false));
   }, [user, apiFetch]);
+
+  async function copyLink(code: string, link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch { /* clipboard unavailable */ }
+  }
 
   function flash(text: string) {
     setMsg(text);
@@ -223,31 +252,6 @@ export default function ManageClassesPage() {
     }
   }
 
-  async function handleAutoSchedule() {
-    setGenerating(true);
-    try {
-      const res = await apiFetch('/api/classes/instances/auto-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ daysAhead: 14 }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Failed');
-      flash(`${json.created} class${json.created !== 1 ? 'es' : ''} scheduled for the next 14 days.`);
-      // Reload
-      const from = todayIST();
-      const to = in14DaysIST();
-      const r2 = await apiFetch(`/api/classes/instances?from=${from}&to=${to}`);
-      const d2 = await r2.json();
-      const raw2: Record<string, unknown>[] = Array.isArray(d2) ? d2 : d2.instances ?? [];
-      setInstances(raw2.map(normalizeInstance));
-    } catch (e) {
-      flash(e instanceof Error ? e.message : 'Could not generate classes.');
-    } finally {
-      setGenerating(false);
-    }
-  }
-
   async function handleSetupSchedule() {
     if (!confirm('Create the default 4-batch schedule (A/B Mon–Wed, C/D Tue–Thu)?')) return;
     setSettingUp(true);
@@ -267,7 +271,7 @@ export default function ManageClassesPage() {
           });
         }
       }
-      flash('Schedule created! Click Auto-Schedule to generate this week\'s classes.');
+      flash('Schedule created! Classes will appear once generated for the week.');
       const slotRes = await apiFetch('/api/classes/slots');
       const slotData = await slotRes.json();
       setSlots(Array.isArray(slotData) ? slotData : slotData.slots ?? []);
@@ -292,16 +296,52 @@ export default function ManageClassesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
-        <button
-          onClick={handleAutoSchedule}
-          disabled={generating || noSlots}
-          className="btn-primary text-sm"
-        >
-          {generating ? 'Scheduling…' : '⚡ Auto-Schedule'}
-        </button>
-      </div>
+      <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
+
+      {/* One stable link per batch */}
+      {!loading && batchLinks.length > 0 && (
+        <div className="card p-0 divide-y divide-gray-100">
+          <div className="px-4 py-2.5">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Batch Class Links
+            </h2>
+          </div>
+          {batchLinks.map((b) => (
+            <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className={`badge flex-shrink-0 ${BATCH_COLORS[b.code] ?? 'badge-neutral'}`}>
+                  Batch {b.code}
+                </span>
+                {b.meetLink ? (
+                  <span className="text-sm text-gray-600 truncate">
+                    {b.meetLink.replace('https://', '')}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400 italic">No link set</span>
+                )}
+              </div>
+              {b.meetLink && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => copyLink(b.code, b.meetLink!)}
+                    className="text-xs text-gray-500 border border-gray-300 rounded-lg px-2.5 py-1 hover:bg-gray-50"
+                  >
+                    {copiedCode === b.code ? '✓ Copied' : 'Copy'}
+                  </button>
+                  <a
+                    href={b.meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-teal-700 border border-teal-400 rounded-lg px-2.5 py-1 hover:bg-teal-50"
+                  >
+                    📹 Join
+                  </a>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Notification */}
       {msg && (
@@ -354,9 +394,9 @@ export default function ManageClassesPage() {
         <div className="card flex flex-col items-center py-14 text-center">
           <span className="text-4xl mb-3">📅</span>
           <p className="text-gray-500 text-sm">No classes scheduled for the next 14 days.</p>
-          <button onClick={handleAutoSchedule} disabled={generating} className="btn-primary mt-4 text-sm">
-            {generating ? 'Scheduling…' : '⚡ Auto-Schedule Now'}
-          </button>
+          <p className="text-gray-400 text-xs mt-1">
+            Classes are generated from the weekly schedule in Admin → Batch Management.
+          </p>
         </div>
       )}
 
@@ -428,18 +468,6 @@ export default function ManageClassesPage() {
                     </div>
                   )}
                 </div>
-
-                {/* Meet link */}
-                {inst.meetLink && (
-                  <a
-                    href={inst.meetLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-teal-600 hover:underline mt-1"
-                  >
-                    📹 Join Google Meet
-                  </a>
-                )}
 
                 {/* Inline time editor */}
                 {editingId === inst.id && (

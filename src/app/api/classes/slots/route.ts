@@ -9,6 +9,8 @@
  */
 
 import { NextRequest } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
@@ -30,10 +32,16 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request, ['student', 'teacher', 'super_admin']);
 
-    const constraints =
-      auth.role === 'teacher'
-        ? [{ type: 'where' as const, field: 'teacherId', op: '==' as const, value: auth.uid }]
-        : [];
+    const { searchParams } = new URL(request.url);
+    const batchBandIdFilter = searchParams.get('batchBandId');
+
+    const constraints: { type: 'where'; field: string; op: '=='; value: unknown }[] = [];
+    if (auth.role === 'teacher') {
+      constraints.push({ type: 'where', field: 'teacherId', op: '==', value: auth.uid });
+    }
+    if (batchBandIdFilter) {
+      constraints.push({ type: 'where', field: 'batchBandId', op: '==', value: batchBandIdFilter });
+    }
 
     const slots = await queryDocs<ClassSlot>(COLLECTIONS.CLASS_SLOTS, constraints);
 

@@ -263,6 +263,22 @@ export const COLLECTIONS = {
 } as const;
 
 // =============================================================================
+// Batch Class Links
+// =============================================================================
+
+/**
+ * The stable Google Meet link each batch uses for every class.
+ * A batch band's stored meetLink (admin-editable) takes precedence;
+ * these are the fallback links students already join through.
+ */
+export const DEFAULT_BATCH_MEET_LINKS: Record<string, string> = {
+  A: 'https://meet.google.com/spv-exsq-sfm',
+  B: 'https://meet.google.com/spv-exsq-sfm',
+  C: 'https://meet.google.com/iyq-wdqw-cfj',
+  D: 'https://meet.google.com/iyq-wdqw-cfj',
+};
+
+// =============================================================================
 // Firebase Storage Paths
 // =============================================================================
 
