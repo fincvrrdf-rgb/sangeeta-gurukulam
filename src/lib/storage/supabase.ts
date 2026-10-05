@@ -16,7 +16,7 @@
 
 // The project URL isn't secret; the service-role key is (server env only).
 const RAW_URL = process.env.SUPABASE_URL || 'https://cqyndfjimosijmcpkolk.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'recordings';
 
 /** Buckets: `materials` is public (lyrics, resources); the others are private. */
@@ -61,7 +61,14 @@ function baseUrl(): string {
   return RAW_URL.replace(/\/$/, '');
 }
 
+/**
+ * New-style Supabase secret keys (`sb_secret_…`) aren't JWTs: they must go in
+ * the `apikey` header only — sending one as `Authorization: Bearer` makes
+ * Storage reject the request ("Invalid Compact JWS"). Legacy service_role
+ * keys are JWTs and are sent in both headers.
+ */
 function authHeaders(): Record<string, string> {
+  if (SERVICE_KEY.startsWith('sb_')) return { apikey: SERVICE_KEY };
   return {
     'Authorization': `Bearer ${SERVICE_KEY}`,
     'apikey': SERVICE_KEY,
