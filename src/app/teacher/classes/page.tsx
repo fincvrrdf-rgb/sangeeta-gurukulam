@@ -1,9 +1,10 @@
 /**
- * Manage Classes — /teacher/classes
+ * Classes — /teacher/classes
  *
- * Batch links panel at the top: each batch has ONE stable Meet link.
- * Below it, upcoming classes grouped by day (attendance, edit time,
- * cancel, delete). No per-class links — the batch link is the link.
+ * Top: each batch's ONE stable Meet link (copy / join).
+ * Below: who joined each class, taken from students clicking their batch's
+ * Join link (/api/attendance/joins). No per-date class list — classes are
+ * generated in the background from the weekly schedule.
  */
 
 'use client';
@@ -12,93 +13,32 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
-type InstanceStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
-type BatchBandCode = 'A' | 'B' | 'C' | 'D';
-
-interface ClassInstance {
-  id: string;
-  date: string;           // YYYY-MM-DD
-  startTime: string;      // "5:30 AM"
-  endTime: string;        // "6:30 AM"
-  startISO: string;       // full ISO for sending to API
-  endISO: string;
-  batchBand: BatchBandCode;
-  status: InstanceStatus;
-  meetLink?: string;
-  enrolledCount?: number;
-}
-
-interface ClassSlot {
-  id: string;
-}
-
 interface BatchLinkRow {
   id: string;
   code: string;
-  name: string;
   meetLink: string | null;
 }
 
-function istDateOffset(days: number): string {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  return fmt.format(new Date(Date.now() + days * 86400000));
+interface JoinEntry {
+  studentId: string;
+  name: string;
+  status: string;
+  joinedAt: string | null;
+  lateByMinutes: number;
+  viaLink: boolean;
 }
 
-function in14DaysIST(): string { return istDateOffset(14); }
-function minus7DaysIST(): string { return istDateOffset(-7); }
-
-function formatDay(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  const today = new Date();
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-  return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
-}
-
-function toHHMM(isoOrTime: string): string {
-  // Extracts HH:MM from either a full ISO or a "HH:MM" time string
-  if (isoOrTime.includes('T')) return isoOrTime.slice(11, 16);
-  if (isoOrTime.length >= 5) return isoOrTime.slice(0, 5);
-  return isoOrTime;
-}
-
-function displayTime(isoOrTime: string): string {
-  const t = toHHMM(isoOrTime);
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h < 12 ? 'AM' : 'PM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
-
-// Build an ISO datetime string by combining YYYY-MM-DD date with HH:MM time (IST)
-function buildISO(date: string, hhmm: string): string {
-  return `${date}T${hhmm}:00+05:30`;
-}
-
-function normalizeInstance(inst: Record<string, unknown>): ClassInstance {
-  let date = (inst.date as string) ?? '';
-  let startISO = (inst.scheduledStartTime as string) ?? '';
-  let endISO = (inst.scheduledEndTime as string) ?? '';
-
-  if (!date && startISO) date = startISO.slice(0, 10);
-
-  return {
-    id: inst.id as string,
-    date,
-    startTime: startISO ? displayTime(startISO) : ((inst.startTime as string) ?? ''),
-    endTime: endISO ? displayTime(endISO) : ((inst.endTime as string) ?? ''),
-    startISO,
-    endISO,
-    batchBand: ((inst.batchBand as string) ?? '') as BatchBandCode,
-    status: (inst.status as InstanceStatus) ?? 'scheduled',
-    meetLink: (inst.meetLink as string) ?? (inst.googleMeetLink as string) ?? undefined,
-    enrolledCount: (inst.enrolledCount as number) ?? undefined,
-  };
+interface ClassJoins {
+  key: string;
+  instanceId: string;
+  batch: string;
+  date: string;
+  start: string;
+  end: string;
+  cancelled: boolean;
+  enrolled: number;
+  joined: JoinEntry[];
+  notJoined: { studentId: string; name: string }[];
 }
 
 const BATCH_COLORS: Record<string, string> = {
@@ -115,61 +55,64 @@ const DEFAULT_SCHEDULE = [
   { batchBandCode: 'D', dayOfWeek: [2, 4], start: '16:30', end: '17:30' },
 ] as const;
 
-export default function ManageClassesPage() {
+function istTime(iso: string): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-IN', {
+    hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+  });
+}
+
+function formatDay(date: string): string {
+  const fmt = (offset: number) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(Date.now() + offset * 86_400_000));
+  if (date === fmt(0)) return 'Today';
+  if (date === fmt(-1)) return 'Yesterday';
+  return new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+}
+
+function JoinBadge({ entry }: { entry: JoinEntry }) {
+  if (entry.status === 'attended') return <span className="badge badge-success">On time</span>;
+  if (entry.status === 'late') return <span className="badge badge-warning">{entry.lateByMinutes} min late</span>;
+  if (entry.status === 'absent') return <span className="badge badge-error">{entry.lateByMinutes} min late · absent</span>;
+  return <span className="badge badge-neutral">{entry.status}</span>;
+}
+
+export default function ClassesPage() {
   const { user, apiFetch } = useAuthContext();
-  const [instances, setInstances] = useState<ClassInstance[]>([]);
-  const [slots, setSlots] = useState<ClassSlot[]>([]);
+  const [batchLinks, setBatchLinks] = useState<BatchLinkRow[]>([]);
+  const [classes, setClasses] = useState<ClassJoins[]>([]);
+  const [hasSlots, setHasSlots] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  // Inline time edit state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editStart, setEditStart] = useState('');
-  const [editEnd, setEditEnd] = useState('');
-  const [savingTime, setSavingTime] = useState(false);
-
-  // Cancel/delete
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const [settingUp, setSettingUp] = useState(false);
-
-  // One stable link per batch
-  const [batchLinks, setBatchLinks] = useState<BatchLinkRow[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
+  const [batchFilter, setBatchFilter] = useState<string>('all');
 
-  useEffect(() => {
-    if (!user) return;
-    const from = minus7DaysIST();
-    const to = in14DaysIST();
-    Promise.all([
-      apiFetch(`/api/classes/instances?from=${from}&to=${to}`).then((r) => r.json()),
-      apiFetch('/api/classes/slots').then((r) => r.json()),
+  function load() {
+    return Promise.all([
       apiFetch('/api/admin/batches').then((r) => r.json()).catch(() => ({ batches: [] })),
+      apiFetch('/api/attendance/joins?days=14').then((r) => r.json()),
+      apiFetch('/api/classes/slots').then((r) => r.json()).catch(() => ({ slots: [] })),
     ])
-      .then(([instData, slotData, batchData]) => {
-        const raw: Record<string, unknown>[] = Array.isArray(instData)
-          ? instData
-          : instData.instances ?? instData.data ?? [];
-        setInstances(raw.map(normalizeInstance));
-        setSlots(Array.isArray(slotData) ? slotData : slotData.slots ?? slotData.data ?? []);
+      .then(([batchData, joinData, slotData]) => {
         const bands: Record<string, unknown>[] = batchData.batches ?? [];
         setBatchLinks(
           bands
             .filter((b) => b.isActive !== false)
-            .map((b) => ({
-              id: b.id as string,
-              code: (b.code as string) ?? '',
-              name: (b.name as string) ?? '',
-              meetLink: (b.meetLink as string) ?? null,
-            }))
+            .map((b) => ({ id: b.id as string, code: (b.code as string) ?? '', meetLink: (b.meetLink as string) ?? null }))
             .sort((a, b) => a.code.localeCompare(b.code)),
         );
+        if (joinData.error) throw new Error(joinData.error);
+        setClasses(joinData.classes ?? []);
+        setHasSlots((slotData.slots ?? []).length > 0 || (joinData.classes ?? []).length > 0);
       })
       .catch((err) => setError(err.message ?? 'Failed to load classes.'))
       .finally(() => setLoading(false));
-  }, [user, apiFetch]);
+  }
+
+  useEffect(() => {
+    if (user) load();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function copyLink(code: string, link: string) {
     try {
@@ -177,79 +120,6 @@ export default function ManageClassesPage() {
       setCopiedCode(code);
       setTimeout(() => setCopiedCode(null), 2000);
     } catch { /* clipboard unavailable */ }
-  }
-
-  function flash(text: string) {
-    setMsg(text);
-    setTimeout(() => setMsg(null), 4000);
-  }
-
-  function startEditing(inst: ClassInstance) {
-    setEditingId(inst.id);
-    setEditStart(toHHMM(inst.startISO || inst.startTime));
-    setEditEnd(toHHMM(inst.endISO || inst.endTime));
-  }
-
-  async function handleSaveTime(inst: ClassInstance) {
-    if (!editStart || !editEnd) return;
-    setSavingTime(true);
-    try {
-      const newStartISO = buildISO(inst.date, editStart);
-      const newEndISO = buildISO(inst.date, editEnd);
-      const res = await apiFetch(`/api/classes/instances/${inst.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduledStartTime: newStartISO, scheduledEndTime: newEndISO }),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      setInstances((prev) =>
-        prev.map((i) =>
-          i.id === inst.id
-            ? { ...i, startTime: displayTime(editStart), endTime: displayTime(editEnd), startISO: newStartISO, endISO: newEndISO }
-            : i
-        )
-      );
-      setEditingId(null);
-      flash('Time updated.');
-    } catch {
-      flash('Could not save time. Please try again.');
-    } finally {
-      setSavingTime(false);
-    }
-  }
-
-  async function handleCancel(id: string) {
-    if (!confirm('Cancel this class?')) return;
-    setCancellingId(id);
-    try {
-      const res = await apiFetch(`/api/classes/instances/${id}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Cancelled by teacher' }),
-      });
-      if (!res.ok) throw new Error('Cancel failed');
-      setInstances((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, status: 'cancelled' } : i))
-      );
-    } catch {
-      flash('Could not cancel the class. Please try again.');
-    } finally {
-      setCancellingId(null);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this class? This cannot be undone.')) return;
-    setDeletingId(id);
-    try {
-      const res = await apiFetch(`/api/classes/instances/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
-      setInstances((prev) => prev.filter((i) => i.id !== id));
-    } catch {
-      flash('Could not delete the class. Please try again.');
-    } finally {
-      setDeletingId(null);
-    }
   }
 
   async function handleSetupSchedule() {
@@ -271,51 +141,40 @@ export default function ManageClassesPage() {
           });
         }
       }
-      flash('Schedule created! Classes will appear once generated for the week.');
-      const slotRes = await apiFetch('/api/classes/slots');
-      const slotData = await slotRes.json();
-      setSlots(Array.isArray(slotData) ? slotData : slotData.slots ?? []);
+      await apiFetch('/api/classes/instances/auto-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daysAhead: 14 }),
+      });
+      await load();
     } catch {
-      flash('Some slots could not be created. Please try again.');
+      setError('Some of the schedule could not be created. Please try again.');
     } finally {
       setSettingUp(false);
     }
   }
 
-  // Group by day
-  const grouped = new Map<string, ClassInstance[]>();
-  for (const inst of instances) {
-    const key = inst.date.slice(0, 10);
-    const bucket = grouped.get(key) ?? [];
-    bucket.push(inst);
-    grouped.set(key, bucket);
-  }
-  const sortedDays = Array.from(grouped.keys()).sort();
-  const noSlots = !loading && slots.length === 0;
+  const visible = classes.filter((c) => batchFilter === 'all' || c.batch === batchFilter);
+  const batchesWithClasses = [...new Set(classes.map((c) => c.batch))].sort();
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
-      {/* Header */}
       <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
 
+      {error && <div className="card border-red-300 bg-red-50 text-red-800 text-sm">{error}</div>}
+
       {/* One stable link per batch */}
-      {!loading && batchLinks.length > 0 && (
+      {batchLinks.length > 0 && (
         <div className="card p-0 divide-y divide-gray-100">
           <div className="px-4 py-2.5">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Batch Class Links
-            </h2>
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Batch Class Links</h2>
           </div>
           {batchLinks.map((b) => (
             <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2.5 min-w-0">
-                <span className={`badge flex-shrink-0 ${BATCH_COLORS[b.code] ?? 'badge-neutral'}`}>
-                  Batch {b.code}
-                </span>
+                <span className={`badge flex-shrink-0 ${BATCH_COLORS[b.code] ?? 'badge-neutral'}`}>Batch {b.code}</span>
                 {b.meetLink ? (
-                  <span className="text-sm text-gray-600 truncate">
-                    {b.meetLink.replace('https://', '')}
-                  </span>
+                  <span className="text-sm text-gray-600 truncate">{b.meetLink.replace('https://', '')}</span>
                 ) : (
                   <span className="text-sm text-gray-400 italic">No link set</span>
                 )}
@@ -343,167 +202,110 @@ export default function ManageClassesPage() {
         </div>
       )}
 
-      {/* Notification */}
-      {msg && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800">
-          {msg}
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="card border-red-300 bg-red-50 text-red-800 text-sm">{error}</div>
-      )}
-
-      {/* No schedule — first-time setup */}
-      {noSlots && (
+      {/* First-time setup */}
+      {!loading && !hasSlots && (
         <div className="card border-saffron-300 bg-saffron-50 space-y-3">
-          <p className="font-semibold text-charcoal">No recurring schedule found</p>
-          <p className="text-sm text-gray-600">Default timings:</p>
+          <p className="font-semibold text-charcoal">No weekly schedule yet</p>
           <div className="text-sm space-y-1 text-gray-700">
-            <p>🟡 <strong>Batch A</strong> — Mon, Wed · 5:30–6:30 AM</p>
-            <p>🟠 <strong>Batch B</strong> — Mon, Wed · 4:30–5:30 PM</p>
-            <p>🟢 <strong>Batch C</strong> — Tue, Thu · 5:30–6:30 AM</p>
-            <p>🟣 <strong>Batch D</strong> — Tue, Thu · 4:30–5:30 PM</p>
+            <p><strong>Batch A</strong> — Mon, Wed · 5:30–6:30 AM</p>
+            <p><strong>Batch B</strong> — Mon, Wed · 4:30–5:30 PM</p>
+            <p><strong>Batch C</strong> — Tue, Thu · 5:30–6:30 AM</p>
+            <p><strong>Batch D</strong> — Tue, Thu · 4:30–5:30 PM</p>
           </div>
-          <button
-            onClick={handleSetupSchedule}
-            disabled={settingUp}
-            className="btn-primary text-sm"
-          >
+          <button onClick={handleSetupSchedule} disabled={settingUp} className="btn-primary text-sm">
             {settingUp ? 'Setting up…' : 'Create Default Schedule'}
           </button>
         </div>
       )}
 
-      {/* Loading skeleton */}
-      {loading && (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="card animate-pulse">
-              <div className="h-3 w-20 bg-gray-200 rounded mb-3" />
-              <div className="h-4 w-40 bg-gray-200 rounded mb-2" />
-              <div className="h-3 w-24 bg-gray-100 rounded" />
+      {/* Who joined — from Join link clicks */}
+      <div className="space-y-3">
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-heading text-lg font-semibold text-charcoal">Who joined</h2>
+            <p className="text-xs text-gray-500">Recorded when a student clicks their batch&apos;s Join link · last 14 days</p>
+          </div>
+          {batchesWithClasses.length > 1 && (
+            <div className="flex gap-1.5">
+              {['all', ...batchesWithClasses].map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBatchFilter(b)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border ${
+                    batchFilter === b ? 'bg-charcoal text-white border-charcoal' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {b === 'all' ? 'All' : b}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {loading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card animate-pulse space-y-2">
+              <div className="h-4 w-48 bg-gray-200 rounded" />
+              <div className="h-3 w-32 bg-gray-100 rounded" />
             </div>
           ))}
-        </div>
-      )}
 
-      {/* Empty */}
-      {!loading && instances.length === 0 && !noSlots && (
-        <div className="card flex flex-col items-center py-14 text-center">
-          <span className="text-4xl mb-3">📅</span>
-          <p className="text-gray-500 text-sm">No classes scheduled for the next 14 days.</p>
-          <p className="text-gray-400 text-xs mt-1">
-            Classes are generated from the weekly schedule in Admin → Batch Management.
-          </p>
-        </div>
-      )}
+        {!loading && visible.length === 0 && (
+          <div className="card text-center py-10 text-sm text-gray-500">No classes in the last 14 days.</div>
+        )}
 
-      {/* Class list */}
-      {!loading && sortedDays.map((day) => (
-        <section key={day}>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">
-            {formatDay(day)}
-          </h2>
-          <div className="card p-0 divide-y divide-gray-100">
-            {grouped.get(day)!.map((inst) => (
-              <div key={inst.id} className="px-4 py-3.5">
-                {/* Main row */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`badge ${BATCH_COLORS[inst.batchBand] ?? 'badge-neutral'}`}>
-                      Batch {inst.batchBand}
-                    </span>
-                    <span className="text-sm font-semibold text-charcoal">
-                      {inst.startTime} – {inst.endTime}
-                    </span>
-                    {inst.enrolledCount != null && inst.enrolledCount > 0 && (
-                      <span className="text-xs text-gray-400">
-                        {inst.enrolledCount} learner{inst.enrolledCount !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                    {inst.status === 'cancelled' && (
-                      <span className="badge badge-error">Cancelled</span>
-                    )}
-                    {inst.status === 'completed' && (
-                      <span className="badge badge-neutral">Done</span>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  {inst.status !== 'cancelled' && (
-                    <div className="flex items-center gap-3">
-                      {/* Attendance: available for active AND completed classes */}
-                      <Link
-                        href={`/teacher/classes/${inst.id}/attendance`}
-                        className="text-xs text-teal-600 hover:text-teal-800 font-medium"
-                      >
-                        Attendance
-                      </Link>
-                      {inst.status !== 'completed' && (
-                        <>
-                          <button
-                            onClick={() => editingId === inst.id ? setEditingId(null) : startEditing(inst)}
-                            className="text-xs text-saffron-600 hover:text-saffron-800 font-medium"
-                          >
-                            {editingId === inst.id ? 'Close' : 'Edit time'}
-                          </button>
-                          <button
-                            onClick={() => handleCancel(inst.id)}
-                            disabled={cancellingId === inst.id}
-                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
-                          >
-                            {cancellingId === inst.id ? '…' : 'Cancel'}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(inst.id)}
-                            disabled={deletingId === inst.id}
-                            className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                          >
-                            {deletingId === inst.id ? '…' : 'Delete'}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
+        {!loading &&
+          visible.map((c) => (
+            <div key={c.key} className="card space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`badge ${BATCH_COLORS[c.batch] ?? 'badge-neutral'}`}>Batch {c.batch}</span>
+                  <span className="text-sm font-semibold text-charcoal">{formatDay(c.date)}</span>
+                  <span className="text-sm text-gray-500">{istTime(c.start)} – {istTime(c.end)}</span>
+                  {c.cancelled && <span className="badge badge-error">Cancelled</span>}
                 </div>
-
-                {/* Inline time editor */}
-                {editingId === inst.id && (
-                  <div className="mt-3 flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-xs text-gray-500">Start</label>
-                      <input
-                        type="time"
-                        value={editStart}
-                        onChange={(e) => setEditStart(e.target.value)}
-                        className="input text-sm py-1 px-2 w-28"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-xs text-gray-500">End</label>
-                      <input
-                        type="time"
-                        value={editEnd}
-                        onChange={(e) => setEditEnd(e.target.value)}
-                        className="input text-sm py-1 px-2 w-28"
-                      />
-                    </div>
-                    <button
-                      onClick={() => handleSaveTime(inst)}
-                      disabled={savingTime}
-                      className="btn-primary text-xs px-3 py-1.5"
-                    >
-                      {savingTime ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
+                {!c.cancelled && (
+                  <span className="text-sm font-semibold text-charcoal">
+                    {c.joined.filter((j) => j.status !== 'absent').length}
+                    <span className="text-gray-400 font-normal"> / {c.enrolled} joined</span>
+                  </span>
                 )}
               </div>
-            ))}
-          </div>
-        </section>
-      ))}
+
+              {!c.cancelled && c.joined.length > 0 && (
+                <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                  {c.joined.map((j) => (
+                    <li key={j.studentId} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-sm text-charcoal truncate">{j.name}</p>
+                        <p className="text-xs text-gray-400">
+                          {j.viaLink ? `Clicked Join at ${istTime(j.joinedAt ?? '')}` : 'Marked by teacher'}
+                        </p>
+                      </div>
+                      <JoinBadge entry={j} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {!c.cancelled && c.notJoined.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  <span className="font-medium text-gray-600">Didn&apos;t join:</span>{' '}
+                  {c.notJoined.map((s) => s.name).join(', ')}
+                </p>
+              )}
+
+              {!c.cancelled && (
+                <Link
+                  href={`/teacher/classes/${c.instanceId}/attendance`}
+                  className="inline-block text-xs text-teal-600 hover:text-teal-800 font-medium"
+                >
+                  Adjust attendance manually →
+                </Link>
+              )}
+            </div>
+          ))}
+      </div>
     </div>
   );
 }

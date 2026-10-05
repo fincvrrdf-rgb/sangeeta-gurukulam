@@ -10,6 +10,7 @@
 import { adminAuth } from '@/lib/firebase/admin';
 import { queryDocs, createDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
+import { loadBandCodes, batchKey, splitCanonicalSlots, deactivateDuplicateSlots } from '@/lib/classes/dedupe';
 
 const SUPER_ADMIN_EMAIL = 'sangeetagurukulam0@gmail.com';
 
@@ -155,16 +156,22 @@ export async function POST() {
       { type: 'where', field: 'scheduledStartTime', op: '<=', value: toDateStr(rangeEnd) + 'T23:59:59' },
     ]);
 
+    // One class per batch per day, keyed by batch code so re-seeded IDs match
+    const bandCodes = await loadBandCodes();
+    await deactivateDuplicateSlots(bandCodes);
     const existingKeys = new Set<string>();
     for (const inst of existingInstances) {
       const dateStr = (inst.scheduledStartTime as string).slice(0, 10);
-      existingKeys.add(`${inst.slotId}|${dateStr}`);
+      existingKeys.add(`${batchKey(bandCodes, inst.batchBandId)}|${dateStr}`);
     }
 
-    // Build full slot list (existing + newly created)
-    const allSlots = await queryDocs<Record<string, unknown>>(COLLECTIONS.CLASS_SLOTS, [
-      { type: 'where', field: 'isActive', op: '==', value: true },
-    ]);
+    // Build full slot list (existing + newly created), one per batch + weekday
+    const allSlots = splitCanonicalSlots(
+      await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_SLOTS, [
+        { type: 'where', field: 'isActive', op: '==', value: true },
+      ]),
+      bandCodes,
+    ).keep;
 
     let instancesCreated = 0;
     for (let i = 0; i < daysAhead; i++) {
@@ -174,7 +181,7 @@ export async function POST() {
 
       for (const slot of allSlots) {
         if ((slot.dayOfWeek as number) !== dayOfWeek) continue;
-        const key = `${slot.id}|${dateStr}`;
+        const key = `${batchKey(bandCodes, slot.batchBandId)}|${dateStr}`;
         if (existingKeys.has(key)) continue;
 
         // Find batch code for this slot's batchBandId

@@ -2,8 +2,10 @@
  * API: POST /api/classes/instances/auto-generate
  *
  * Generates class instances for the next N days from active class slots.
+ * At most one class per batch per day. Before generating, duplicate slots are
+ * deactivated and duplicate classes (no attendance marked) are removed.
  * Skips days where:
- *  - An instance already exists for that slot+date
+ *  - The batch already has a class that date
  *  - The teacher has an availability block for that day
  *
  * Call from teacher panel or via Vercel cron (CRON_SECRET).
@@ -11,9 +13,16 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { queryDocs, getDoc, setDoc, nowISO } from '@/lib/firebase/firestore';
+import { queryDocs, setDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import type { ClassSlot } from '@/domain/types';
+import {
+  loadBandCodes,
+  batchKey,
+  splitCanonicalSlots,
+  deactivateDuplicateSlots,
+  removeDuplicateInstances,
+} from '@/lib/classes/dedupe';
 
 function addDays(date: Date, n: number): Date {
   const d = new Date(date);
@@ -55,10 +64,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const daysAhead = Math.min(Number(body.daysAhead) || 14, 30);
 
-    // Load all active slots
-    const slots = await queryDocs<ClassSlot>(COLLECTIONS.CLASS_SLOTS, [
+    const bandCodes = await loadBandCodes();
+    const slotsDeactivated = await deactivateDuplicateSlots(bandCodes);
+
+    // Load active slots, one per batch + weekday
+    const activeSlots = await queryDocs<ClassSlot & Record<string, unknown>>(COLLECTIONS.CLASS_SLOTS, [
       { type: 'where', field: 'isActive', op: '==', value: true },
     ]);
+    const slots = splitCanonicalSlots(activeSlots, bandCodes).keep;
 
     if (slots.length === 0) {
       return Response.json({ success: true, created: 0, message: 'No active class slots found. Create slots first.' });
@@ -69,17 +82,20 @@ export async function POST(request: NextRequest) {
 
     // Load existing instances for the date range to avoid duplicates
     const rangeEnd = addDays(today, daysAhead);
+    // Full-history sweep (never touches classes with attendance marked)
+    const cleanup = await removeDuplicateInstances(bandCodes);
+
     const existingInstances = await queryDocs<Record<string, unknown>>(COLLECTIONS.CLASS_INSTANCES, [
       { type: 'where', field: 'scheduledStartTime', op: '>=', value: toDateStr(today) },
       { type: 'where', field: 'scheduledStartTime', op: '<=', value: toDateStr(rangeEnd) + 'T23:59:59' },
     ]);
 
-    // Build a set of "slotId|date" already existing
+    // "batchCode|date" pairs that already have a class (any slot, any batch ID)
     const existingKeys = new Set<string>();
     for (const inst of existingInstances) {
       const startTime = inst.scheduledStartTime as string ?? '';
       const dateStr = startTime.slice(0, 10);
-      existingKeys.add(`${inst.slotId}|${dateStr}`);
+      existingKeys.add(`${batchKey(bandCodes, inst.batchBandId)}|${dateStr}`);
     }
 
     // Load teacher unavailability blocks
@@ -110,13 +126,7 @@ export async function POST(request: NextRequest) {
       'D': 'https://meet.google.com/iyq-wdqw-cfj',
     };
 
-    // Resolve all unique batchBandIds → code once before the loop
-    const uniqueBandIds = [...new Set(slots.map((s) => s.batchBandId).filter(Boolean))];
-    const bandCodeMap: Record<string, string> = {};
-    for (const bandId of uniqueBandIds) {
-      const band = await getDoc<Record<string, unknown>>(COLLECTIONS.BATCH_BANDS, bandId);
-      if (band) bandCodeMap[bandId] = band.code as string;
-    }
+    const bandCodeMap = bandCodes;
 
     let created = 0;
     const errors: string[] = [];
@@ -129,7 +139,7 @@ export async function POST(request: NextRequest) {
       for (const slot of slots) {
         if (slot.dayOfWeek !== dayOfWeek) continue;
 
-        const key = `${slot.id}|${dateStr}`;
+        const key = `${batchKey(bandCodes, slot.batchBandId)}|${dateStr}`;
         if (existingKeys.has(key)) continue;
 
         // Check teacher unavailability
@@ -180,6 +190,8 @@ export async function POST(request: NextRequest) {
       success: true,
       created,
       slotsFound: slots.length,
+      duplicateSlotsDeactivated: slotsDeactivated,
+      duplicateClassesRemoved: cleanup.deleted,
       daysScanned: daysAhead,
       errors: errors.length > 0 ? errors : undefined,
     });

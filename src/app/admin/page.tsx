@@ -181,8 +181,12 @@ export default function AdminDashboard() {
       const data = await r.json();
       if (data.success) {
         setDedupMsg(
-          data.documentsDeleted > 0
-            ? `Removed ${data.documentsDeleted} duplicate(s) across ${data.duplicateGroupsFound} slot-date group(s). Refresh the teacher schedule to confirm.`
+          data.documentsDeleted > 0 || data.duplicateSlotsDeactivated > 0
+            ? `Removed ${data.documentsDeleted} duplicate class(es) and turned off ${data.duplicateSlotsDeactivated} duplicate weekly slot(s).` +
+              (data.keptWithAttendance > 0
+                ? ` ${data.keptWithAttendance} duplicate(s) kept because attendance was already marked — delete those from Classes if not needed.`
+                : '') +
+              ' Refresh the teacher schedule to confirm.'
             : 'No duplicates found — schedule is clean.'
         );
       } else {

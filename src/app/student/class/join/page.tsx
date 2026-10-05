@@ -1,8 +1,8 @@
 /**
  * Student — My Classes
- * Shows upcoming class instances for the student's batch (next 14 days).
- * Today's classes show a Join button. Future classes show the date.
- * Auto-marks attendance when Meet link is clicked.
+ * One Join button using the batch's permanent Meet link. Clicking it records
+ * attendance for today's class (the server finds it) and opens Meet.
+ * Shows when the next class is — no per-date list.
  */
 
 'use client';
@@ -75,58 +75,42 @@ export default function JoinClassPage() {
       .finally(() => setLoading(false));
   }, [apiFetch]);
 
-  // Timezone-safe: scheduledStartTime is offset-aware (e.g. 2026-04-16T07:30:00+05:30).
-  // new Date(iso).getTime() gives the correct UTC epoch on any device.
-  // Do NOT use new Date(...toLocaleString) — that re-parses IST as local time, shifting the epoch.
-  function getJoinStatus(instance: ClassInstance) {
-    const now = Date.now();
-    const start = new Date(instance.scheduledStartTime).getTime();
-    const end = new Date(instance.scheduledEndTime).getTime();
-    const minsUntilStart = (start - now) / 60000;
-    if (instance.status === 'cancelled') return 'cancelled';
-    if (instance.status === 'completed' || end < now) return 'ended';
-    // Live: from 15 min before start through the entire session
-    if (minsUntilStart <= 15) return 'live';
-    return 'upcoming';
-  }
+  // Timezone-safe: scheduledStartTime is offset-aware, so Date parsing gives the right epoch anywhere.
+  const now = Date.now();
+  const active = instances
+    .filter((i) => !String(i.status).includes('cancel') && new Date(i.scheduledEndTime).getTime() > now)
+    .sort((a, b) => a.scheduledStartTime.localeCompare(b.scheduledStartTime));
+  const nextClass = active[0] ?? null;
+  const isLive = !!nextClass && new Date(nextClass.scheduledStartTime).getTime() - now <= 15 * 60_000;
 
-  async function handleJoin(instance: ClassInstance, link: string) {
+  // The batch's single stable link (same for every class — API guarantees this)
+  const withLink = instances.find((i) => i.meetLink || i.googleMeetLink);
+  const stableLink = withLink ? (withLink.meetLink || withLink.googleMeetLink) : null;
+  const batchLabel = withLink ? (withLink.batchBand || withLink.batchBandId) : '';
+
+  async function handleJoin(link: string) {
+    // Open Meet first so pop-up blockers don't stop it, then record attendance
+    window.open(link, '_blank', 'noopener,noreferrer');
     try {
       const res = await apiFetch('/api/attendance/auto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classInstanceId: instance.id }),
+        body: JSON.stringify({}),
       });
       const json = await res.json();
       if (json.message) {
         setAttendanceMsg(json.message);
-        setTimeout(() => setAttendanceMsg(null), 5000);
+        setTimeout(() => setAttendanceMsg(null), 6000);
       }
     } catch { /* non-blocking */ }
-    window.open(link, '_blank', 'noopener,noreferrer');
   }
-
-  // The batch's single stable link (same for every class — API guarantees this)
-  const batchLink = instances.find((i) => i.meetLink || i.googleMeetLink);
-  const stableLink = batchLink ? (batchLink.meetLink || batchLink.googleMeetLink) : null;
-  const batchLabel = batchLink ? (batchLink.batchBand || batchLink.batchBandId) : '';
-
-  // Group by date (YYYY-MM-DD)
-  const grouped = new Map<string, ClassInstance[]>();
-  for (const inst of instances) {
-    const key = inst.scheduledStartTime.slice(0, 10);
-    const bucket = grouped.get(key) ?? [];
-    bucket.push(inst);
-    grouped.set(key, bucket);
-  }
-  const sortedDays = Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
       <div>
-        <h1 className="section-title">My Classes</h1>
+        <h1 className="section-title">My Class</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          Upcoming classes for your batch — next 14 days.
+          Your attendance is recorded when you click Join.
         </p>
       </div>
 
@@ -136,37 +120,10 @@ export default function JoinClassPage() {
         </div>
       )}
 
-      {/* Stable batch link — the same link for every class of this batch */}
-      {!loading && stableLink && (
-        <div className="card border-teal-200 bg-teal-50 flex items-center justify-between gap-3 flex-wrap">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-teal-900">
-              Batch {batchLabel} — your class link
-            </p>
-            <p className="text-xs text-teal-700 truncate">
-              {stableLink.replace('https://', '')} · same link for every class
-            </p>
-          </div>
-          <a
-            href={stableLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-semibold text-teal-700 border border-teal-400 rounded-lg px-3 py-1.5 hover:bg-teal-100 flex-shrink-0"
-          >
-            Open Link
-          </a>
-        </div>
-      )}
-
       {loading && (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="card animate-pulse">
-              <div className="h-3 bg-gray-200 rounded w-1/4 mb-3" />
-              <div className="h-4 bg-gray-200 rounded w-1/3 mb-2" />
-              <div className="h-3 bg-gray-100 rounded w-1/2" />
-            </div>
-          ))}
+        <div className="card animate-pulse space-y-3">
+          <div className="h-4 bg-gray-200 rounded w-1/3" />
+          <div className="h-10 bg-gray-200 rounded" />
         </div>
       )}
 
@@ -187,70 +144,37 @@ export default function JoinClassPage() {
         </div>
       )}
 
-      {!loading && !noBatch && !error && sortedDays.length === 0 && (
-        <div className="card text-center py-10">
-          <div className="text-4xl mb-3">📅</div>
-          <p className="text-gray-600 font-medium">No upcoming classes scheduled</p>
-          <p className="text-gray-400 text-sm mt-1">
-            Classes are scheduled Mon/Wed (Batch A &amp; B) and Tue/Thu (Batch C &amp; D).
-            Your teacher will generate the schedule shortly.
-          </p>
+      {!loading && !noBatch && !error && (
+        <div className="card space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-charcoal">Batch {batchLabel}</p>
+              {nextClass ? (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {isLive ? 'Class is on now' : 'Next class'}: {formatDate(nextClass.scheduledStartTime.slice(0, 10))},{' '}
+                  {formatTime(nextClass.scheduledStartTime)} – {formatTime(nextClass.scheduledEndTime)} IST
+                </p>
+              ) : (
+                <p className="text-sm text-gray-500 mt-0.5">No upcoming class scheduled yet.</p>
+              )}
+            </div>
+            {isLive && <span className="badge badge-success flex-shrink-0">Live Now</span>}
+          </div>
+
+          {stableLink ? (
+            <>
+              <button onClick={() => handleJoin(stableLink)} className="btn-primary w-full text-center">
+                {isLive ? '🔴 Join Class — Google Meet' : 'Join Class — Google Meet'}
+              </button>
+              <p className="text-xs text-gray-400 text-center">
+                {stableLink.replace('https://', '')} · same link for every class
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-gray-400">Class link not set yet — please check with your teacher.</p>
+          )}
         </div>
       )}
-
-      {!loading && sortedDays.map(([dateKey, dayInstances]) => (
-        <section key={dateKey}>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            {formatDate(dateKey)}
-          </h2>
-          <div className="space-y-3">
-            {dayInstances.map((instance) => {
-              const joinStatus = getJoinStatus(instance);
-              const link = instance.meetLink || instance.googleMeetLink;
-              const isToday = dateKey === todayIST();
-
-              return (
-                <div key={instance.id} className="card">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-charcoal">
-                        {formatTime(instance.scheduledStartTime)} – {formatTime(instance.scheduledEndTime)} IST
-                      </p>
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        Batch {instance.batchBand || instance.batchBandId}
-                      </p>
-                    </div>
-                    <span className={`badge flex-shrink-0 ${
-                      joinStatus === 'live' ? 'badge-success' :
-                      joinStatus === 'upcoming' ? 'badge-info' :
-                      joinStatus === 'cancelled' ? 'badge-error' : 'badge-neutral'
-                    }`}>
-                      {joinStatus === 'live' ? 'Live Now' :
-                       joinStatus === 'cancelled' ? 'Cancelled' :
-                       joinStatus === 'ended' ? 'Ended' : 'Upcoming'}
-                    </span>
-                  </div>
-
-                  {joinStatus !== 'cancelled' && joinStatus !== 'ended' && link && (
-                    <div className="mt-3">
-                      <button
-                        onClick={() => handleJoin(instance, link)}
-                        className="btn-primary w-full text-center"
-                      >
-                        {joinStatus === 'live' ? '🔴 Join Live — Google Meet' : 'Join Google Meet'}
-                      </button>
-                    </div>
-                  )}
-
-                  {joinStatus !== 'cancelled' && joinStatus !== 'ended' && !link && (
-                    <p className="text-xs text-gray-400 mt-2">Meet link not yet available</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
     </div>
   );
 }
