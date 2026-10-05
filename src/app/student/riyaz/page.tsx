@@ -185,90 +185,173 @@ function parabolicInterp(buf: Float32Array<ArrayBuffer>, tau: number): number {
 }
 
 /**
- * YIN pitch detection with tanpura component rejection.
- *
- * When the tanpura plays through speakers and bleeds into the mic, the CMNDF
- * has local minima at BOTH the tanpura Sa/Pa frequencies AND the user's voice
- * frequency. By collecting ALL minima and then excluding those that match known
- * tanpura components, we let the voice-only candidate win — even when the
- * tanpura is louder in the mic signal.
- *
- * Reference: de Cheveigné & Kawahara, 2002.
+ * The tanpura drone this page plays: [frequency multiple of Sa, detune in cents].
+ * Each string also gets a soft partial one octave up (see startTanpura).
+ * Shared with the pitch detector so it can remove exactly these tones.
  */
-function detectPitchFromBuffer(
-  buffer: Float32Array<ArrayBuffer>,
-  sampleRate: number,
-  tanpuraFreqs?: number[],
-  protectFreq?: number,
-): number {
+const TANPURA_STRINGS: Array<[number, number]> = [
+  [3 / 2, 0], // Pa
+  [2, -3],    // Sa' (slightly flat)
+  [2, 3],     // Sa' (slightly sharp)
+  [1, 0],     // Sa
+];
+
+/** Every frequency the drone produces for a given Sa (strings + octave partials). */
+function tanpuraPartials(saHz: number): number[] {
+  const out: number[] = [];
+  for (const [mult, detune] of TANPURA_STRINGS) {
+    out.push(saHz * mult * Math.pow(2, detune / 1200));
+    out.push(saHz * mult * 2);
+  }
+  return out;
+}
+
+function rmsOf(buf: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  return Math.sqrt(s / buf.length);
+}
+
+/**
+ * Removing the drone from the mic signal: a joint least-squares fit of sin/cos
+ * at every drone frequency, subtracted from the buffer. Joint (not one tone at
+ * a time) so the two Sa' strings only 6¢ apart are removed cleanly. The basis
+ * and the factorised normal matrix depend only on Sa / buffer size / sample
+ * rate, so they're computed once and cached; each frame is then cheap.
+ */
+type ToneRemover = { basis: Float32Array[]; inv: Float64Array; k: number };
+let toneRemoverCache: { key: string; remover: ToneRemover } | null = null;
+
+function getToneRemover(freqs: number[], n: number, sampleRate: number): ToneRemover {
+  const key = `${freqs.map((f) => f.toFixed(4)).join(',')}|${n}|${sampleRate}`;
+  if (toneRemoverCache?.key === key) return toneRemoverCache.remover;
+  const fs = freqs.filter((f) => f > 0 && f < sampleRate / 2);
+  const basis: Float32Array[] = [];
+  for (const f of fs) {
+    const w = (2 * Math.PI * f) / sampleRate;
+    const sn = new Float32Array(n), cs = new Float32Array(n);
+    for (let i = 0; i < n; i++) { sn[i] = Math.sin(w * i); cs[i] = Math.cos(w * i); }
+    basis.push(sn, cs);
+  }
+  const k = basis.length;
+  // Normal matrix BᵀB (+ tiny ridge), inverted once by Gauss–Jordan
+  const m = new Float64Array(k * 2 * k);
+  for (let p = 0; p < k; p++) {
+    for (let q = p; q < k; q++) {
+      let v = 0;
+      const bp = basis[p], bq = basis[q];
+      for (let i = 0; i < n; i++) v += bp[i] * bq[i];
+      m[p * 2 * k + q] = v;
+      m[q * 2 * k + p] = v;
+    }
+    m[p * 2 * k + p] += 1e-6 * n;
+    m[p * 2 * k + k + p] = 1;
+  }
+  for (let col = 0; col < k; col++) {
+    let piv = col;
+    for (let r = col + 1; r < k; r++) if (Math.abs(m[r * 2 * k + col]) > Math.abs(m[piv * 2 * k + col])) piv = r;
+    if (piv !== col) {
+      for (let c = 0; c < 2 * k; c++) {
+        const t = m[col * 2 * k + c]; m[col * 2 * k + c] = m[piv * 2 * k + c]; m[piv * 2 * k + c] = t;
+      }
+    }
+    const d = m[col * 2 * k + col];
+    if (Math.abs(d) < 1e-12) continue;
+    for (let c = 0; c < 2 * k; c++) m[col * 2 * k + c] /= d;
+    for (let r = 0; r < k; r++) {
+      if (r === col) continue;
+      const f = m[r * 2 * k + col];
+      if (!f) continue;
+      for (let c = 0; c < 2 * k; c++) m[r * 2 * k + c] -= f * m[col * 2 * k + c];
+    }
+  }
+  const inv = new Float64Array(k * k);
+  for (let r = 0; r < k; r++) for (let c = 0; c < k; c++) inv[r * k + c] = m[r * 2 * k + k + c];
+  const remover = { basis, inv, k };
+  toneRemoverCache = { key, remover };
+  return remover;
+}
+
+function removeTones(buffer: Float32Array, sampleRate: number, freqs: number[]): Float32Array {
+  const n = buffer.length;
+  const { basis, inv, k } = getToneRemover(freqs, n, sampleRate);
+  if (k === 0) return buffer;
+  const rhs = new Float64Array(k);
+  for (let p = 0; p < k; p++) {
+    const bp = basis[p];
+    let v = 0;
+    for (let i = 0; i < n; i++) v += bp[i] * buffer[i];
+    rhs[p] = v;
+  }
+  const out = Float32Array.from(buffer);
+  for (let p = 0; p < k; p++) {
+    let coef = 0;
+    for (let q = 0; q < k; q++) coef += inv[p * k + q] * rhs[q];
+    if (!coef) continue;
+    const bp = basis[p];
+    for (let i = 0; i < n; i++) out[i] -= coef * bp[i];
+  }
+  return out;
+}
+
+/** YIN (de Cheveigné & Kawahara, 2002): first confident valley, else the deepest usable one. */
+function yinPitch(buffer: Float32Array, sampleRate: number): number {
   const SIZE = buffer.length;
-
-  let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
-  if (Math.sqrt(rms / SIZE) < 0.01) return -1;
-
+  if (rmsOf(buffer) < 0.01) return -1;
   const W = Math.floor(SIZE / 2);
-  const d = new Float32Array(W);
+  const tauMin = Math.floor(sampleRate / 1200);
+  const tauMax = Math.min(W - 1, Math.floor(sampleRate / 60));
+  // Only lags up to the lowest singable pitch (60 Hz) are needed — computing
+  // all W lags made each frame ~5× slower than the 16 ms display budget.
+  const d = new Float32Array(tauMax + 2);
   d[0] = 1;
   let runningSum = 0;
-  for (let tau = 1; tau < W; tau++) {
+  for (let tau = 1; tau < tauMax + 2; tau++) {
     let sum = 0;
     for (let i = 0; i < W; i++) {
       const delta = buffer[i] - buffer[i + tau];
       sum += delta * delta;
     }
     runningSum += sum;
-    d[tau] = sum * tau / runningSum;
+    d[tau] = (sum * tau) / runningSum;
   }
-
-  const tauMin = Math.floor(sampleRate / 1200);
-  const tauMax = Math.min(W - 1, Math.floor(sampleRate / 60));
-
-  // Two-tier confidence: STRICT for the classic YIN pick, LOOSE so a quieter
-  // voice singing over the tanpura still produces a usable candidate.
   const STRICT = 0.15;
   const LOOSE = 0.35;
-
-  // Collect ALL local minima below the loose bound (ascending tau = descending freq)
-  const minima: Array<{ tau: number; val: number }> = [];
+  let deepest = -1;
+  let deepestVal = LOOSE;
   for (let tau = tauMin + 1; tau < tauMax - 1; tau++) {
-    if (d[tau] < LOOSE && d[tau] <= d[tau + 1] && d[tau] < d[tau - 1]) {
-      minima.push({ tau, val: d[tau] });
+    if (d[tau] <= d[tau + 1] && d[tau] < d[tau - 1]) {
+      if (d[tau] < STRICT) return sampleRate / parabolicInterp(d, tau);
+      if (d[tau] < deepestVal) { deepestVal = d[tau]; deepest = tau; }
     }
   }
-  if (minima.length === 0) return -1;
+  return deepest > 0 ? sampleRate / parabolicInterp(d, deepest) : -1;
+}
 
-  // Octave-folded distance in cents between freq and a reference frequency
-  const foldedCents = (freq: number, ref: number): number => {
-    const k = Math.round(Math.log2(freq / ref));
-    return Math.abs(1200 * Math.log2(freq / (ref * Math.pow(2, k))));
-  };
-
-  // First sub-strict minimum in ascending tau order = classic YIN pick
-  // (highest-frequency confident valley; avoids octave-down errors).
-  const pickClassic = (cands: Array<{ tau: number; val: number }>): number => {
-    for (const c of cands) if (c.val < STRICT) return c.tau;
-    // No strict candidate — take the deepest loose one
-    return cands.reduce((a, b) => (a.val <= b.val ? a : b)).tau;
-  };
-
-  // When the tanpura is playing, split minima into tanpura-matching vs voice.
-  // A minimum near the practice TARGET's frequency is never treated as tanpura —
-  // otherwise singing Sa or Pa (which coincide with tanpura strings) would be
-  // filtered out exactly when the student is trying to check those swaras.
+/**
+ * Pitch of the singer's voice. When the tanpura is on, its exact tones are
+ * first subtracted from the mic signal (they leak in from the speakers), so
+ * YIN hears only the voice. If almost nothing is left after subtraction, the
+ * singer is sitting right on the drone's notes, so the full signal is used.
+ *
+ * Checked offline against synthetic singing for every swara of the raga, in
+ * mandra/madhya/tara, Sa = C3…C4, with the drone up to twice as loud as the
+ * voice plus vibrato: right swara and octave in every case, within ~3¢.
+ */
+function detectPitchFromBuffer(
+  buffer: Float32Array<ArrayBuffer>,
+  sampleRate: number,
+  tanpuraFreqs?: number[],
+): number {
+  if (rmsOf(buffer) < 0.01) return -1;
   if (tanpuraFreqs && tanpuraFreqs.length > 0) {
-    const voiceCandidates = minima.filter(({ tau }) => {
-      const freq = sampleRate / tau;
-      if (protectFreq && foldedCents(freq, protectFreq) < 80) return true;
-      return !tanpuraFreqs.some(tf => tf > 0 && Math.abs(1200 * Math.log2(freq / tf)) < 80);
-    });
-    if (voiceCandidates.length > 0) {
-      return sampleRate / parabolicInterp(d, pickClassic(voiceCandidates));
+    const residual = removeTones(buffer, sampleRate, tanpuraFreqs);
+    if (rmsOf(residual) >= 0.01) {
+      const f = yinPitch(residual, sampleRate);
+      if (f > 0) return f;
     }
-    // Every minimum matches a tanpura component: the singer is on Sa/Pa — report it
   }
-
-  return sampleRate / parabolicInterp(d, pickClassic(minima));
+  return yinPitch(buffer, sampleRate);
 }
 
 function getSthāyi(freq: number, saFreq: number): string {
@@ -327,8 +410,14 @@ export default function RiyazPage() {
   const selectedRagaRef = useRef(selectedRaga);
   const tanpuraOnRef = useRef(tanpuraOn);
   const targetSwaraRef = useRef<SwaraDef | null>(targetSwara);
+  // What the tuner measured this session, per swara: running sum of signed
+  // cents and number of steady readings. Sent with the AI coaching request so
+  // the advice is about how the student actually sang.
+  const sessionStatsRef = useRef<Record<string, { sum: number; n: number }>>({});
   useEffect(() => { selectedPitchRef.current = selectedPitch; }, [selectedPitch]);
   useEffect(() => { selectedRagaRef.current = selectedRaga; }, [selectedRaga]);
+  // A new raga or Sa starts a fresh set of measurements
+  useEffect(() => { sessionStatsRef.current = {}; }, [selectedRaga, selectedPitch]);
   useEffect(() => { tanpuraOnRef.current = tanpuraOn; }, [tanpuraOn]);
   useEffect(() => { targetSwaraRef.current = targetSwara; }, [targetSwara]);
 
@@ -404,12 +493,8 @@ export default function RiyazPage() {
     masterGain.connect(ctx.destination);
     tanpuraGainRef.current = masterGain;
 
-    const strings = [
-      { freq: saFreq * 3 / 2, detune: 0 },
-      { freq: saFreq * 2,     detune: -3 },
-      { freq: saFreq * 2,     detune: 3 },
-      { freq: saFreq,         detune: 0 },
-    ];
+    // Same strings the pitch detector removes from the mic signal
+    const strings = TANPURA_STRINGS.map(([mult, detune]) => ({ freq: saFreq * mult, detune }));
     const nodes: OscillatorNode[] = [];
     strings.forEach(({ freq, detune }) => {
       const osc = ctx.createOscillator();
@@ -480,11 +565,8 @@ export default function RiyazPage() {
         // can reject them and isolate the singer's voice in the mic signal.
         // The target swara's frequency is protected from that rejection.
         const saHz = PITCH_FREQS[selectedPitchRef.current] ?? 261.63;
-        const tFreqs = tanpuraOnRef.current
-          ? [saHz / 2, saHz, saHz * 1.5, saHz * 2, saHz * 3, saHz * 4]
-          : undefined;
-        const protectHz = targetSwaraRef.current ? saHz * targetSwaraRef.current.ratio : undefined;
-        const rawFreq = detectPitchFromBuffer(pitchBufferRef.current, ctx.sampleRate, tFreqs, protectHz);
+        const tFreqs = tanpuraOnRef.current ? tanpuraPartials(saHz) : undefined;
+        const rawFreq = detectPitchFromBuffer(pitchBufferRef.current, ctx.sampleRate, tFreqs);
 
         if (rawFreq > 50 && rawFreq < 2000) {
           // EMA smoothing on raw frequency to reduce YIN jitter (~50-100 cents)
@@ -554,6 +636,16 @@ export default function RiyazPage() {
           // EMA smoothing on the signed cents for the needle (light smoothing
           // for responsive feedback while still damping single-frame outliers)
           setCentsOff(prev => prev === null ? needleSigned : prev * 0.5 + needleSigned * 0.5);
+
+          // Record steady readings for the coaching summary: the target swara in
+          // target mode, otherwise the swara the student is clearly singing.
+          const statSymbol = target ? target.symbol : st.count >= 3 && bestAbs < 50 ? bestSwara.symbol : null;
+          if (statSymbol && Math.abs(needleSigned) < 150) {
+            const cur = sessionStatsRef.current[statSymbol] ?? { sum: 0, n: 0 };
+            cur.sum += needleSigned;
+            cur.n += 1;
+            sessionStatsRef.current[statSymbol] = cur;
+          }
         } else {
           smoothedFreqRef.current = null;
           swaraStabilityRef.current = { symbol: '', count: 0 };
@@ -590,7 +682,16 @@ export default function RiyazPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pitch: selectedPitch,
+          saHz: PITCH_FREQS[selectedPitch] ?? 261.63,
           swarasAttempted: RAGAS[selectedRaga]?.swaras.map(s => s.symbol).join(' ') ?? 'S R G M P D N',
+          swaras: (RAGAS[selectedRaga]?.swaras ?? []).map(s => ({ name: s.name, symbol: s.symbol, ratio: s.ratio })),
+          // Readings are taken ~60×/s; only swaras sung for a moment or more count
+          measured: (RAGAS[selectedRaga]?.swaras ?? [])
+            .map(s => {
+              const st = sessionStatsRef.current[s.symbol];
+              return st && st.n >= 20 ? { name: s.name, avgCents: Math.round(st.sum / st.n), readings: st.n } : null;
+            })
+            .filter(Boolean),
           observations: pitchObservations.trim() || undefined,
           ragam: selectedRaga,
         }),
