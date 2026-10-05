@@ -13,7 +13,7 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
-import { parseSchedule, type StudentSchedule } from '@/lib/classes/student-schedule';
+import { parseSchedule, startFor, addMinutesHHMM, type StudentSchedule } from '@/lib/classes/student-schedule';
 
 export interface StudentInfo {
   studentId: string;
@@ -34,6 +34,8 @@ export interface StudentAttendance {
   lateByMinutes: number;
   durationMinutes: number | null; // minutes entered by the teacher
   scheduledMinutes: number | null; // the student's usual class length (used when none entered)
+  start: string | null;            // the student's own start/end that day (ISO), if scheduled
+  end: string | null;
   viaLink: boolean;               // recorded by the Join click (not edited by teacher)
   notes: string;
   recordInstanceId: string;       // class copy the record lives on (edit target)
@@ -150,6 +152,13 @@ export async function GET(request: NextRequest) {
         return !sched || sched.days.includes(dow);
       });
       const roster = new Map(onToday.map((s) => [s.studentId, s.name]));
+      const ownTimes = (sid: string) => {
+        const sched = scheduleById.get(sid);
+        const own = sched ? startFor(sched, dow) : null;
+        return own && sched
+          ? { start: `${date}T${own}:00+05:30`, end: `${date}T${addMinutesHHMM(own, sched.durationMinutes)}:00+05:30` }
+          : { start: null, end: null };
+      };
       for (const sid of best.keys()) if (!roster.has(sid)) roster.set(sid, nameById.get(sid) ?? 'Student');
 
       const students: StudentAttendance[] = [...roster.entries()]
@@ -163,6 +172,7 @@ export async function GET(request: NextRequest) {
             lateByMinutes: Number(r?.lateByMinutes) || 0,
             durationMinutes: typeof r?.durationMinutes === 'number' ? (r.durationMinutes as number) : null,
             scheduledMinutes: scheduleById.get(studentId)?.durationMinutes ?? null,
+            ...ownTimes(studentId),
             viaLink: !!r && isAuto(r),
             notes: (r?.notes as string) ?? '',
             recordInstanceId: r ? String(r.classInstanceId) : main.id,

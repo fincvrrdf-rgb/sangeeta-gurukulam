@@ -27,6 +27,8 @@ interface StudentAttendance {
   lateByMinutes: number;
   durationMinutes: number | null;
   scheduledMinutes: number | null;
+  start: string | null;
+  end: string | null;
   viaLink: boolean;
   notes: string;
   recordInstanceId: string;
@@ -163,7 +165,7 @@ function StudentRow({
     <tr className="align-middle">
       <td className="px-3 py-2 whitespace-nowrap">
         <p className="text-sm text-charcoal">{formatDay(cls.date)}</p>
-        <p className="text-xs text-gray-400">{istTime(cls.start)} – {istTime(cls.end)}</p>
+        <p className="text-xs text-gray-400">{istTime(student.start ?? cls.start)} – {istTime(student.end ?? cls.end)}</p>
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 tabular-nums">
         {cls.teacherJoinedAt ? istTime(cls.teacherJoinedAt) : <span className="text-gray-300">—</span>}
@@ -337,6 +339,8 @@ function ScheduleEditor({
   const [days, setDays] = useState<number[]>(initial?.days ?? []);
   const [minutes, setMinutes] = useState(String(initial?.durationMinutes ?? 60));
   const [startTime, setStartTime] = useState(initial?.startTime ?? '');
+  // Per-day start times; empty = use the usual start time
+  const [dayTimes, setDayTimes] = useState<Record<string, string>>(initial?.dayTimes ?? {});
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -353,6 +357,9 @@ function ScheduleEditor({
           days,
           durationMinutes: Math.max(5, Math.round(Number(minutes) || 60)),
           startTime: startTime || null,
+          dayTimes: Object.fromEntries(
+            Object.entries(dayTimes).filter(([d, t]) => t && t !== startTime && days.includes(Number(d))),
+          ),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -391,6 +398,25 @@ function ScheduleEditor({
           ))}
         </div>
       </div>
+      {days.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-1.5">Different time on some days? (leave blank to use the usual time)</p>
+          <div className="flex flex-wrap gap-3">
+            {days.map((d) => (
+              <label key={d} className="text-xs text-gray-600 flex items-center gap-1.5">
+                {DAY_LABELS[d]}
+                <input
+                  type="time"
+                  value={dayTimes[String(d)] ?? ''}
+                  onChange={(e) => setDayTimes((prev) => ({ ...prev, [String(d)]: e.target.value }))}
+                  className="input text-sm py-1 px-2 w-28"
+                  aria-label={`Start time on ${DAY_LABELS[d]}`}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex items-end gap-3 flex-wrap">
         <label className="text-xs text-gray-600">
           Minutes per class
@@ -404,7 +430,7 @@ function ScheduleEditor({
           />
         </label>
         <label className="text-xs text-gray-600">
-          Start time (optional)
+          Usual start time
           <input
             type="time"
             value={startTime}

@@ -1,20 +1,24 @@
 /**
  * Per-student class schedule, stored on the student profile as `classSchedule`.
  *
- * Students in the same batch can have different days and lengths (e.g. one
- * student only on Wednesdays, another Mon–Thu for 30 minutes). When any
- * student in a batch has a schedule, the batch's classes are generated on the
- * union of those students' days, and each student's attendance only lists
- * their own days.
+ * Students in the same batch can have different days, times and lengths
+ * (e.g. one student Wednesdays 5:00–6:00, another Mon–Thu 30 min at 5:00 but
+ * 6:00 on Wednesdays). When any student in a batch has a schedule, the
+ * batch's classes are generated on the union of their days, spanning from the
+ * earliest student's start to the latest student's end. Each student's
+ * lateness and attendance rows use their own start time.
  */
 
 export interface StudentSchedule {
-  days: number[];            // 0 = Sunday … 6 = Saturday
-  durationMinutes: number;   // default minutes taught per class
-  startTime: string | null;  // 'HH:MM' IST; null = use the batch's usual time
+  days: number[];                    // 0 = Sunday … 6 = Saturday
+  durationMinutes: number;           // minutes per class
+  startTime: string | null;          // default 'HH:MM' IST; null = batch's usual time
+  dayTimes: Record<string, string>;  // per-weekday start overrides, e.g. { '3': '06:00' }
 }
 
 export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const HHMM = /^\d{2}:\d{2}$/;
 
 export function parseSchedule(raw: unknown): StudentSchedule | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -24,22 +28,42 @@ export function parseSchedule(raw: unknown): StudentSchedule | null {
     : [];
   if (days.length === 0) return null;
   const duration = Number(r.durationMinutes);
-  const start = typeof r.startTime === 'string' && /^\d{2}:\d{2}$/.test(r.startTime) ? r.startTime : null;
-  return { days, durationMinutes: duration > 0 ? Math.round(duration) : 60, startTime: start };
+  const start = typeof r.startTime === 'string' && HHMM.test(r.startTime) ? r.startTime : null;
+  const dayTimes: Record<string, string> = {};
+  if (r.dayTimes && typeof r.dayTimes === 'object') {
+    for (const [k, v] of Object.entries(r.dayTimes as Record<string, unknown>)) {
+      if (days.includes(Number(k)) && typeof v === 'string' && HHMM.test(v) && v !== start) dayTimes[k] = v;
+    }
+  }
+  return { days, durationMinutes: duration > 0 ? Math.round(duration) : 60, startTime: start, dayTimes };
 }
 
-/** 'Mon–Thu · 30 min' / 'Wed · 60 min · 5:30 AM' */
+/** The student's start time on a weekday, or null to use the batch's time. */
+export function startFor(s: StudentSchedule, dow: number): string | null {
+  return s.dayTimes[String(dow)] ?? s.startTime;
+}
+
+export function formatHHMM(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function dayList(days: number[]): string {
+  const consecutive = days.length > 2 && days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+  return consecutive
+    ? `${DAY_LABELS[days[0]]}–${DAY_LABELS[days[days.length - 1]]}`
+    : days.map((d) => DAY_LABELS[d]).join(', ');
+}
+
+/** 'Mon–Thu · 30 min · 5:00 AM (Wed 6:00 AM)' */
 export function describeSchedule(s: StudentSchedule): string {
-  const consecutive = s.days.length > 2 && s.days.every((d, i) => i === 0 || d === s.days[i - 1] + 1);
-  const days = consecutive
-    ? `${DAY_LABELS[s.days[0]]}–${DAY_LABELS[s.days[s.days.length - 1]]}`
-    : s.days.map((d) => DAY_LABELS[d]).join(', ');
-  let time = '';
-  if (s.startTime) {
-    const [h, m] = s.startTime.split(':').map(Number);
-    time = ` · ${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+  let text = `${dayList(s.days)} · ${s.durationMinutes} min`;
+  if (s.startTime) text += ` · ${formatHHMM(s.startTime)}`;
+  const overrides = Object.entries(s.dayTimes).sort(([a], [b]) => Number(a) - Number(b));
+  if (overrides.length) {
+    text += ` (${overrides.map(([d, t]) => `${DAY_LABELS[Number(d)]} ${formatHHMM(t)}`).join(', ')})`;
   }
-  return `${days} · ${s.durationMinutes} min${time}`;
+  return text;
 }
 
 /** Add minutes to an 'HH:MM' time (same day, clamped to 23:59). */
