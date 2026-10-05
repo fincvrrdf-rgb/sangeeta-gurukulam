@@ -194,7 +194,14 @@ export async function GET(request: NextRequest) {
         });
       }
       const roster = new Set(rosterIds);
-      for (const sid of best.keys()) roster.add(sid);
+      // Someone with a record on a shared batch class is shown too — except a
+      // student with their own schedule on a day that isn't one of their days
+      const classDow = new Date(`${date}T00:00:00Z`).getUTCDay();
+      for (const sid of best.keys()) {
+        const sched = scheduleById.get(sid);
+        if (!participants.length && sched && !sched.days.includes(classDow)) continue;
+        roster.add(sid);
+      }
 
       const classMinutes = minutesBetween(start, end);
       // On a shared batch class, a scheduled student's row shows their own time
