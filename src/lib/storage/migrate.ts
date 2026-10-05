@@ -38,15 +38,41 @@ function firebaseLocation(ref: string): { bucket?: string; path: string } | null
   return { path: ref.replace(/^\/+/, '') };
 }
 
+/**
+ * Read the file from Firebase with the admin SDK; if that fails and we have
+ * the file's own download link (lyrics / resources store one), fetch that.
+ * Then write it to Supabase.
+ */
 async function copyFromFirebase(
   loc: { bucket?: string; path: string },
   toBucket: string,
   toPath: string,
+  downloadUrl?: string,
 ): Promise<string> {
-  const file = (loc.bucket ? adminStorage.bucket(loc.bucket) : adminStorage.bucket()).file(loc.path);
-  const [[buffer], [meta]] = await Promise.all([file.download(), file.getMetadata()]);
-  const contentType = (meta.contentType as string) || 'application/octet-stream';
-  await uploadToSupabase(toPath, buffer, contentType, toBucket);
+  let buffer: Buffer;
+  let contentType = 'application/octet-stream';
+  try {
+    const file = (loc.bucket ? adminStorage.bucket(loc.bucket) : adminStorage.bucket()).file(loc.path);
+    const [[data], [meta]] = await Promise.all([file.download(), file.getMetadata()]);
+    buffer = data;
+    contentType = (meta.contentType as string) || contentType;
+  } catch (adminError) {
+    if (!downloadUrl || !/^https?:\/\//.test(downloadUrl)) throw adminError;
+    const res = await fetch(downloadUrl.includes('alt=media') || !downloadUrl.includes('firebasestorage')
+      ? downloadUrl
+      : `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}alt=media`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Firebase download failed (${res.status}) ${body.slice(0, 120)} | admin: ${errText(adminError)}`);
+    }
+    buffer = Buffer.from(await res.arrayBuffer());
+    contentType = res.headers.get('content-type') || contentType;
+  }
+  try {
+    await uploadToSupabase(toPath, buffer, contentType, toBucket);
+  } catch (e) {
+    throw new Error(`Supabase upload failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
   return contentType;
 }
 
@@ -69,7 +95,7 @@ export async function migrateFirebaseFiles(dryRun: boolean): Promise<MigrationRe
       if (dryRun) { report.pending++; next.push(f); continue; }
       try {
         const path = `lyrics/${doc.id}/${baseName(loc.path)}`;
-        await copyFromFirebase(loc, BUCKETS.materials, path);
+        await copyFromFirebase(loc, BUCKETS.materials, path, ref);
         next.push({ ...f, storageRef: supabasePublicUrl(BUCKETS.materials, path), migratedFrom: ref });
         report.moved++;
         changed = true;
@@ -90,7 +116,7 @@ export async function migrateFirebaseFiles(dryRun: boolean): Promise<MigrationRe
     if (dryRun) { report.pending++; continue; }
     try {
       const path = `resources/${doc.id}/${baseName(loc.path)}`;
-      await copyFromFirebase(loc, BUCKETS.materials, path);
+      await copyFromFirebase(loc, BUCKETS.materials, path, ref);
       await updateDoc(COLLECTIONS.RESOURCES, doc.id, {
         storageRef: supabasePublicUrl(BUCKETS.materials, path),
         migratedFrom: ref,
@@ -147,7 +173,8 @@ export async function migrateFirebaseFiles(dryRun: boolean): Promise<MigrationRe
 
 function errText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  if (/No such object|404/i.test(msg)) return 'The file is not in Firebase Storage (the original upload never finished). Please upload it again.';
-  if (/billing|402|requires a billing/i.test(msg)) return 'Firebase refused to hand over the file (storage billing). Please upload it again.';
-  return msg.slice(0, 200);
+  if (/Supabase upload failed/i.test(msg)) return msg.slice(0, 240);
+  if (/No such object|\b404\b/i.test(msg)) return 'Not found in Firebase Storage (the original upload never finished) — please upload it again.';
+  if (/billing|\b402\b/i.test(msg)) return 'Firebase still says billing is disabled — re-enable billing on the Firebase project, wait a few minutes and try again.';
+  return msg.slice(0, 240);
 }
