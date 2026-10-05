@@ -136,12 +136,24 @@ function StudentRow({
     setSaving(true);
     setErr(null);
     try {
+      // A scheduled day with no class yet: create it first
+      let classInstanceId = student.recordInstanceId;
+      if (!classInstanceId) {
+        const er = await apiFetch('/api/classes/ensure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId: student.studentId, date: cls.date }),
+        });
+        const ej = await er.json().catch(() => ({}));
+        if (!er.ok || !ej.instanceId) throw new Error(ej.error ?? 'Could not create the class');
+        classInstanceId = ej.instanceId as string;
+      }
       const res = await apiFetch('/api/attendance/mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId: student.studentId,
-          classInstanceId: student.recordInstanceId,
+          classInstanceId,
           status: finalStatus,
           lateByMinutes: finalStatus === 'late' ? student.lateByMinutes : 0,
           durationMinutes: minutes === '' ? null : Math.max(0, Math.round(Number(minutes))),
@@ -156,6 +168,7 @@ function StudentRow({
         status: finalStatus,
         durationMinutes: minutes === '' ? null : Math.max(0, Math.round(Number(minutes))),
         viaLink: false,
+        recordInstanceId: classInstanceId,
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save');

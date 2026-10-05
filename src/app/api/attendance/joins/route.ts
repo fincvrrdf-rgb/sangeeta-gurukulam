@@ -17,7 +17,7 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { loadBandCodes, batchKey, classKey, classStudentIds } from '@/lib/classes/dedupe';
-import { parseSchedule, type StudentSchedule } from '@/lib/classes/student-schedule';
+import { parseSchedule, startFor, addMinutesHHMM, type StudentSchedule } from '@/lib/classes/student-schedule';
 import { loadLinkContext, resolveClassLink } from '@/lib/classes/links';
 
 export const dynamic = 'force-dynamic';
@@ -103,6 +103,7 @@ export async function GET(request: NextRequest) {
     const studentsByBatch = new Map<string, string[]>();
     const scheduleById = new Map<string, StudentSchedule | null>();
     const nameById = new Map<string, string>();
+    const joinedOn = new Map<string, string>(); // studentId → first day they count from
     const studentInfo: StudentInfo[] = [];
     for (const p of profiles) {
       const name = (p.fullName as string) || 'Student';
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
       studentsByBatch.set(code, [...(studentsByBatch.get(code) ?? []), p.id]);
       const schedule = parseSchedule(p.classSchedule);
       scheduleById.set(p.id, schedule);
+      joinedOn.set(p.id, String(p.createdAt ?? p.onboardedAt ?? '').slice(0, 10));
       studentInfo.push({
         studentId: p.id,
         name,
@@ -195,6 +197,14 @@ export async function GET(request: NextRequest) {
       for (const sid of best.keys()) roster.add(sid);
 
       const classMinutes = minutesBetween(start, end);
+      // On a shared batch class, a scheduled student's row shows their own time
+      const ownTimes = (sid: string): { start: string | null; end: string | null } => {
+        const sched = scheduleById.get(sid);
+        const own = !participants.length && sched ? startFor(sched, new Date(`${date}T00:00:00Z`).getUTCDay()) : null;
+        return own && sched
+          ? { start: `${date}T${own}:00+05:30`, end: `${date}T${addMinutesHHMM(own, sched.durationMinutes)}:00+05:30` }
+          : { start: null, end: null };
+      };
       const students: StudentAttendance[] = [...roster]
         .map((studentId) => {
           const r = best.get(studentId);
@@ -206,8 +216,7 @@ export async function GET(request: NextRequest) {
             lateByMinutes: Number(r?.lateByMinutes) || 0,
             durationMinutes: typeof r?.durationMinutes === 'number' ? (r.durationMinutes as number) : null,
             scheduledMinutes: participants.length ? classMinutes : (scheduleById.get(studentId)?.durationMinutes ?? null),
-            start: null,
-            end: null,
+            ...ownTimes(studentId),
             viaLink: !!r && isAuto(r),
             notes: (r?.notes as string) ?? '',
             recordInstanceId: r ? String(r.classInstanceId) : main.id,
@@ -234,6 +243,57 @@ export async function GET(request: NextRequest) {
         enrolled: rosterIds.length,
         students,
       });
+    }
+
+    // Scheduled days with no class yet (e.g. before the schedule was set): list
+    // them so the teacher can mark them; saving creates the class
+    // (POST /api/classes/ensure).
+    const covered = new Set<string>();
+    for (const c of classes) for (const st of c.students) covered.add(`${st.studentId}|${c.date}`);
+    for (const info of studentInfo) {
+      const sched = info.schedule;
+      if (!sched) continue;
+      const startDay = [from, joinedOn.get(info.studentId) ?? ''].sort()[1] || from;
+      for (let d = new Date(`${startDay}T00:00:00Z`); ; d = new Date(d.getTime() + 86_400_000)) {
+        const date = d.toISOString().slice(0, 10);
+        if (date > today) break;
+        const dow = d.getUTCDay();
+        if (!sched.days.includes(dow) || covered.has(`${info.studentId}|${date}`)) continue;
+        const time = startFor(sched, dow) ?? '05:30';
+        const start = `${date}T${time}:00+05:30`;
+        const end = `${date}T${addMinutesHHMM(time, sched.durationMinutes)}:00+05:30`;
+        classes.push({
+          key: `virtual:${info.studentId}|${date}`,
+          instanceId: '',
+          kind: 'regular',
+          isGroup: false,
+          batch: info.batch,
+          date,
+          start,
+          end,
+          upcoming: false,
+          cancelled: false,
+          cancellationReason: null,
+          meetLink: info.effectiveLink,
+          note: null,
+          teacherJoinedAt: null,
+          enrolled: 1,
+          students: [{
+            studentId: info.studentId,
+            name: info.name,
+            status: null,
+            joinedAt: null,
+            lateByMinutes: 0,
+            durationMinutes: null,
+            scheduledMinutes: sched.durationMinutes,
+            start: null,
+            end: null,
+            viaLink: false,
+            notes: '',
+            recordInstanceId: '',
+          }],
+        });
+      }
     }
 
     classes.sort((a, b) => b.start.localeCompare(a.start));
