@@ -12,9 +12,11 @@ import { createDoc, queryDocs, getDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { z } from 'zod';
+import { AnalysisSchema, generateRecordingReview } from '@/lib/ai/recording-review';
 
 const SubmitRecordingSchema = z.object({
-  teachingUnitId: z.string().min(1),
+  /** 'general' when the student isn't practising a specific syllabus unit */
+  teachingUnitId: z.string().min(1).default('general'),
   storagePath: z.string().min(1),
   storageProvider: z.enum(['supabase', 'firebase']).optional(),
   fileName: z.string().min(1),
@@ -22,6 +24,11 @@ const SubmitRecordingSchema = z.object({
   fileSizeBytes: z.number().int().positive(),
   durationSeconds: z.number().positive(),
   consentGiven: z.literal(true),
+  studentNote: z.string().max(300).optional(),
+  /** Unit name shown when there is no syllabus unit (e.g. the song practised) */
+  pieceName: z.string().max(120).optional(),
+  /** Pitch measurements made in the browser (src/lib/music/analyze.ts) */
+  analysis: AnalysisSchema.optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest) {
     const enriched = recordings.map(r => ({
       ...r,
       studentName: studentMap.get(r.studentId as string) ?? '',
-      unitName:    unitMap.get(r.teachingUnitId as string) ?? (r.teachingUnitId as string) ?? '',
+      unitName:    unitMap.get(r.teachingUnitId as string) || (r.pieceName as string) || (r.teachingUnitId === 'general' ? 'General practice' : (r.teachingUnitId as string) ?? ''),
     }));
 
     return Response.json({ recordings: enriched });
@@ -90,7 +97,19 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { teachingUnitId, storagePath, storageProvider, fileName, mimeType, fileSizeBytes, durationSeconds } = parsed.data;
+    const { teachingUnitId, storagePath, storageProvider, fileName, mimeType, fileSizeBytes, durationSeconds, studentNote, pieceName, analysis } = parsed.data;
+
+    // Students may only point a recording at their own folder
+    if (auth.role === 'student' && !storagePath.startsWith(`recordings/${auth.uid}/`)) {
+      return Response.json({ error: 'Invalid storage path' }, { status: 400 });
+    }
+
+    const unit = teachingUnitId !== 'general'
+      ? await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, teachingUnitId)
+      : null;
+    const aiReview = analysis
+      ? await generateRecordingReview(analysis, { unitName: unit?.unitName ?? pieceName ?? null, studentNote })
+      : null;
 
     const recordingId = await createDoc(COLLECTIONS.PRACTICE_RECORDINGS, {
       studentId: auth.uid,
@@ -101,6 +120,10 @@ export async function POST(request: NextRequest) {
       mimeType,
       fileSizeBytes,
       durationSeconds,
+      studentNote: studentNote ?? null,
+      pieceName: pieceName ?? null,
+      analysis: analysis ?? null,
+      aiReview,
       consentGiven: true,
       status: 'submitted',
       submittedAt: nowISO(),
@@ -119,7 +142,7 @@ export async function POST(request: NextRequest) {
       userAgent,
     });
 
-    return Response.json({ success: true, recordingId });
+    return Response.json({ success: true, recordingId, aiReview });
   } catch (error) {
     return authErrorResponse(error);
   }

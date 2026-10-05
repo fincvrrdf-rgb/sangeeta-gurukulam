@@ -11,11 +11,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { AiReviewCard, type AiReviewData } from '@/components/recording/AiReview';
 
 interface Recording {
   id: string;
   teachingUnitId: string;
   teachingUnitName?: string;
+  unitName?: string;
+  aiReview?: AiReviewData | null;
   fileName: string;
   mimeType: string;
   durationSeconds: number;
@@ -158,7 +161,7 @@ export default function PracticeHistoryPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-medium text-charcoal text-sm truncate">
-                    {rec.teachingUnitName ?? rec.teachingUnitId}
+                    {rec.unitName || rec.teachingUnitName || rec.teachingUnitId}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {rec.submittedAt
@@ -170,6 +173,10 @@ export default function PracticeHistoryPage() {
                 </div>
                 <StatusBadge status={rec.status} />
               </div>
+
+              {rec.aiReview && rec.aiReview.points?.length > 0 && (
+                <AiReviewCard review={rec.aiReview} compact />
+              )}
 
               {/* Review section */}
               {rec.status === 'reviewed' && (
