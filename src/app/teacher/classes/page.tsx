@@ -38,6 +38,7 @@ interface ClassJoins {
   start: string;
   end: string;
   cancelled: boolean;
+  teacherJoinedAt: string | null;
   enrolled: number;
   students: StudentAttendance[];
 }
@@ -79,6 +80,13 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const PRESENT = new Set(['attended', 'late']);
+
+/** "3 min after you" / "2 min before you" / "same time as you" */
+function relativeToTeacher(studentAt: string, teacherAt: string): string {
+  const diff = Math.round((new Date(studentAt).getTime() - new Date(teacherAt).getTime()) / 60000);
+  if (diff === 0) return 'same time as you';
+  return diff > 0 ? `${diff} min after you` : `${-diff} min before you`;
+}
 
 function classLengthMinutes(c: ClassJoins): number {
   const ms = new Date(c.end).getTime() - new Date(c.start).getTime();
@@ -145,7 +153,9 @@ function StudentRow({
   const info = student.status === null
     ? 'Not recorded'
     : student.joinedAt
-      ? `Clicked Join at ${istTime(student.joinedAt)}${student.viaLink ? '' : ' · edited by you'}`
+      ? `Joined at ${istTime(student.joinedAt)}${
+          cls.teacherJoinedAt ? ` (${relativeToTeacher(student.joinedAt, cls.teacherJoinedAt)})` : ''
+        }${student.viaLink ? '' : ' · edited by you'}`
       : 'Marked by you';
 
   return (
@@ -216,6 +226,11 @@ function ClassCard({
           <span className="text-sm text-gray-500">{istTime(cls.start)} – {istTime(cls.end)}</span>
           {cls.cancelled && <span className="badge badge-error">Cancelled</span>}
         </div>
+        {!cls.cancelled && (
+          <span className={`text-xs ${cls.teacherJoinedAt ? 'text-teal-700' : 'text-gray-400'}`}>
+            {cls.teacherJoinedAt ? `You joined at ${istTime(cls.teacherJoinedAt)}` : 'Your join not recorded'}
+          </span>
+        )}
         {!cls.cancelled && (
           <span className="text-sm font-semibold text-charcoal">
             {present}
@@ -293,6 +308,28 @@ export default function ClassesPage() {
           : { ...c, students: c.students.map((s) => (s.studentId === updated.studentId ? updated : s)) },
       ),
     );
+  }
+
+  /** Open Meet, then record the teacher's join time on today's class for this batch. */
+  async function teacherJoin(code: string, link: string) {
+    window.open(link, '_blank', 'noopener,noreferrer');
+    try {
+      const res = await apiFetch('/api/classes/teacher-join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchCode: code }),
+      });
+      const json = await res.json();
+      if (json.recorded && json.teacherJoinedAt) {
+        setClasses((prev) =>
+          prev.map((c) =>
+            c.batch === code && c.date === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+              ? { ...c, teacherJoinedAt: c.teacherJoinedAt ?? json.teacherJoinedAt }
+              : c,
+          ),
+        );
+      }
+    } catch { /* non-blocking */ }
   }
 
   async function copyLink(code: string, link: string) {
@@ -385,14 +422,12 @@ export default function ClassesPage() {
                   >
                     {copiedCode === b.code ? '✓ Copied' : 'Copy'}
                   </button>
-                  <a
-                    href={b.meetLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => teacherJoin(b.code, b.meetLink!)}
                     className="text-xs font-semibold text-teal-700 border border-teal-400 rounded-lg px-2.5 py-1 hover:bg-teal-50"
                   >
                     📹 Join
-                  </a>
+                  </button>
                 </div>
               )}
             </div>

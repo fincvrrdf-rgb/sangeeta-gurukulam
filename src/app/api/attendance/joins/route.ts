@@ -38,6 +38,7 @@ export interface ClassJoins {
   start: string;            // ISO
   end: string;
   cancelled: boolean;
+  teacherJoinedAt: string | null; // when the teacher clicked Join for this batch
   enrolled: number;
   students: StudentAttendance[];
 }
@@ -156,6 +157,8 @@ export async function GET(request: NextRequest) {
         start: String(main.scheduledStartTime ?? ''),
         end: String(main.scheduledEndTime ?? ''),
         cancelled: live.length === 0,
+        teacherJoinedAt:
+          group.map((i) => i.teacherJoinedAt as string | undefined).filter(Boolean).sort()[0] ?? null,
         enrolled: enrolled.length,
         students,
       });
