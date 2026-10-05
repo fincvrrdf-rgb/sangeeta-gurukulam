@@ -13,6 +13,7 @@ import { COLLECTIONS, DEFAULT_BATCH_MEET_LINKS } from '@/domain/constants';
 import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
+import { parseSchedule, startFor, addMinutesHHMM } from '@/lib/classes/student-schedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,6 +89,27 @@ export async function GET(request: NextRequest) {
         if (studentBatchCode && batchCodeMap[i.batchBandId] === studentBatchCode) return true;
         return false;
       });
+
+      // A student with their own schedule only sees classes on their days
+      const mySchedule = parseSchedule(studentProfile?.classSchedule);
+      if (mySchedule) {
+        instances = instances
+          .filter((i) => {
+            const date = String(i.scheduledStartTime ?? '').slice(0, 10);
+            return mySchedule.days.includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+          })
+          .map((i) => {
+            // Show the student their own start/end that day
+            const date = String(i.scheduledStartTime ?? '').slice(0, 10);
+            const own = startFor(mySchedule, new Date(`${date}T00:00:00Z`).getUTCDay());
+            if (!own) return i;
+            return {
+              ...i,
+              scheduledStartTime: `${date}T${own}:00+05:30`,
+              scheduledEndTime: `${date}T${addMinutesHHMM(own, mySchedule.durationMinutes)}:00+05:30`,
+            };
+          });
+      }
     }
 
     // Step 3: compute enrolled learner count per batch (students + co-learners)

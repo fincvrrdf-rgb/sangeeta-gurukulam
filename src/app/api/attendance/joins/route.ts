@@ -13,6 +13,14 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
+import { parseSchedule, startFor, addMinutesHHMM, type StudentSchedule } from '@/lib/classes/student-schedule';
+
+export interface StudentInfo {
+  studentId: string;
+  name: string;
+  batch: string;
+  schedule: StudentSchedule | null;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +32,10 @@ export interface StudentAttendance {
   status: string | null;          // null = nothing recorded yet
   joinedAt: string | null;        // when the Join link was clicked
   lateByMinutes: number;
-  durationMinutes: number | null; // time the teacher spent with this student
+  durationMinutes: number | null; // minutes entered by the teacher
+  scheduledMinutes: number | null; // the student's usual class length (used when none entered)
+  start: string | null;            // the student's own start/end that day (ISO), if scheduled
+  end: string | null;
   viaLink: boolean;               // recorded by the Join click (not edited by teacher)
   notes: string;
   recordInstanceId: string;       // class copy the record lives on (edit target)
@@ -71,6 +82,8 @@ export async function GET(request: NextRequest) {
 
     // Enrolled students per batch code
     const studentsByBatch = new Map<string, { studentId: string; name: string }[]>();
+    const scheduleById = new Map<string, StudentSchedule | null>();
+    const studentInfo: StudentInfo[] = [];
     const nameById = new Map<string, string>();
     for (const p of profiles) {
       const name = (p.fullName as string) || 'Student';
@@ -78,6 +91,9 @@ export async function GET(request: NextRequest) {
       if (p.isActive === false || !p.currentBatchBandId) continue;
       const code = batchKey(bandCodes, p.currentBatchBandId);
       studentsByBatch.set(code, [...(studentsByBatch.get(code) ?? []), { studentId: p.id, name }]);
+      const schedule = parseSchedule(p.classSchedule);
+      scheduleById.set(p.id, schedule);
+      studentInfo.push({ studentId: p.id, name, batch: code, schedule });
     }
 
     // Group class instances by batch + date
@@ -129,7 +145,20 @@ export async function GET(request: NextRequest) {
       }
 
       const enrolled = studentsByBatch.get(batch) ?? [];
-      const roster = new Map(enrolled.map((s) => [s.studentId, s.name]));
+      // Students with their own schedule only get rows on their days
+      const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+      const onToday = enrolled.filter((s) => {
+        const sched = scheduleById.get(s.studentId);
+        return !sched || sched.days.includes(dow);
+      });
+      const roster = new Map(onToday.map((s) => [s.studentId, s.name]));
+      const ownTimes = (sid: string) => {
+        const sched = scheduleById.get(sid);
+        const own = sched ? startFor(sched, dow) : null;
+        return own && sched
+          ? { start: `${date}T${own}:00+05:30`, end: `${date}T${addMinutesHHMM(own, sched.durationMinutes)}:00+05:30` }
+          : { start: null, end: null };
+      };
       for (const sid of best.keys()) if (!roster.has(sid)) roster.set(sid, nameById.get(sid) ?? 'Student');
 
       const students: StudentAttendance[] = [...roster.entries()]
@@ -142,6 +171,8 @@ export async function GET(request: NextRequest) {
             joinedAt: r && isAuto(r) ? ((r.markedAt as string) ?? null) : ((r?.joinedAt as string) ?? null),
             lateByMinutes: Number(r?.lateByMinutes) || 0,
             durationMinutes: typeof r?.durationMinutes === 'number' ? (r.durationMinutes as number) : null,
+            scheduledMinutes: scheduleById.get(studentId)?.durationMinutes ?? null,
+            ...ownTimes(studentId),
             viaLink: !!r && isAuto(r),
             notes: (r?.notes as string) ?? '',
             recordInstanceId: r ? String(r.classInstanceId) : main.id,
@@ -159,13 +190,14 @@ export async function GET(request: NextRequest) {
         cancelled: live.length === 0,
         teacherJoinedAt:
           group.map((i) => i.teacherJoinedAt as string | undefined).filter(Boolean).sort()[0] ?? null,
-        enrolled: enrolled.length,
+        enrolled: onToday.length,
         students,
       });
     }
 
     classes.sort((a, b) => b.start.localeCompare(a.start));
-    return Response.json({ success: true, classes });
+    studentInfo.sort((a, b) => a.name.localeCompare(b.name));
+    return Response.json({ success: true, classes, students: studentInfo });
   } catch (error) {
     return authErrorResponse(error);
   }

@@ -23,6 +23,7 @@ import type { ClassInstance, AppSettings, LongAbsenceRecord, AbsenceRecord, Atte
 import type { AttendanceStatus } from '@/domain/enums';
 import { z } from 'zod';
 import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
+import { parseSchedule, startFor } from '@/lib/classes/student-schedule';
 
 function istToday(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -36,9 +37,12 @@ async function findTodaysClass(studentId: string): Promise<{ id: string; copyIds
   const bandId = profile?.currentBatchBandId as string | undefined;
   if (!bandId) return null;
 
+  const today = istToday();
+  const mySchedule = parseSchedule(profile?.classSchedule);
+  if (mySchedule && !mySchedule.days.includes(new Date(`${today}T00:00:00Z`).getUTCDay())) return null;
+
   const bandCodes = await loadBandCodes();
   const myBatch = batchKey(bandCodes, bandId);
-  const today = istToday();
   const todays = (await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
     { type: 'where', field: 'scheduledStartTime', op: '>=', value: `${today}T00:00:00+05:30` },
     { type: 'where', field: 'scheduledStartTime', op: '<=', value: `${today}T23:59:59+05:30` },
@@ -107,7 +111,16 @@ export async function POST(request: NextRequest) {
     // scheduledStartTime is an offset-aware ISO string (e.g. 2026-04-16T07:30:00+05:30).
     // Parsing it with new Date() gives the correct UTC epoch on any server timezone.
     const now = Date.now();
-    const classStart = new Date(classInstance.scheduledStartTime).getTime();
+    // A student with their own schedule is late relative to *their* start
+    // time that day (e.g. 6:00 on Wednesdays), not the shared class start.
+    let classStart = new Date(classInstance.scheduledStartTime).getTime();
+    const ownProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, studentId);
+    const ownSchedule = parseSchedule(ownProfile?.classSchedule);
+    if (ownSchedule && classInstance.scheduledStartTime) {
+      const date = classInstance.scheduledStartTime.slice(0, 10);
+      const own = startFor(ownSchedule, new Date(`${date}T00:00:00Z`).getUTCDay());
+      if (own) classStart = new Date(`${date}T${own}:00+05:30`).getTime();
+    }
     const lateByMinutes = Math.max(0, Math.floor((now - classStart) / 60000));
 
     // Determine attendance status
