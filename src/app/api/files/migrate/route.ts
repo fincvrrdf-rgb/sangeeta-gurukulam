@@ -9,7 +9,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { migrateFirebaseFiles } from '@/lib/storage/migrate';
-import { supabaseConfigured } from '@/lib/storage/supabase';
+import { supabaseConfigured, describeServiceKey } from '@/lib/storage/supabase';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -18,7 +18,12 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['teacher', 'super_admin']);
     const report = await migrateFirebaseFiles(true);
-    return Response.json({ configured: supabaseConfigured(), pending: report.pending, alreadyMoved: report.alreadyMoved });
+    return Response.json({
+      configured: supabaseConfigured(),
+      keyKind: describeServiceKey(),
+      pending: report.pending,
+      alreadyMoved: report.alreadyMoved,
+    });
   } catch (error) {
     return authErrorResponse(error);
   }

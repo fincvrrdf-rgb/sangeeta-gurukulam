@@ -16,7 +16,35 @@
 
 // The project URL isn't secret; the service-role key is (server env only).
 const RAW_URL = process.env.SUPABASE_URL || 'https://cqyndfjimosijmcpkolk.supabase.co';
-const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+// Tolerate common paste mistakes: whitespace, surrounding quotes, "Bearer ".
+const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+  .trim()
+  .replace(/^['"]|['"]$/g, '')
+  .replace(/^Bearer\s+/i, '')
+  .trim();
+
+/**
+ * What kind of key is configured — never the key itself. Used to tell the
+ * teacher when the wrong value was pasted into Vercel.
+ */
+export function describeServiceKey():
+  | 'missing' | 'secret' | 'publishable' | 'service_role' | 'anon' | 'other_jwt' | 'not_a_key' {
+  if (!SERVICE_KEY) return 'missing';
+  if (SERVICE_KEY.startsWith('sb_secret_')) return 'secret';
+  if (SERVICE_KEY.startsWith('sb_publishable_')) return 'publishable';
+  const parts = SERVICE_KEY.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      if (payload.role === 'service_role') return 'service_role';
+      if (payload.role === 'anon') return 'anon';
+      return 'other_jwt';
+    } catch {
+      return 'not_a_key';
+    }
+  }
+  return 'not_a_key';
+}
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'recordings';
 
 /** Buckets: `materials` is public (lyrics, resources); the others are private. */

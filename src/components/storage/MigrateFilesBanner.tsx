@@ -18,6 +18,7 @@ export function MigrateFilesBanner({ onMoved }: { onMoved?: () => void }) {
   const { user, apiFetch } = useAuthContext();
   const [pending, setPending] = useState<number | null>(null);
   const [configured, setConfigured] = useState(true);
+  const [keyKind, setKeyKind] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -29,6 +30,7 @@ export function MigrateFilesBanner({ onMoved }: { onMoved?: () => void }) {
       .then((d) => {
         setPending(typeof d.pending === 'number' ? d.pending : 0);
         setConfigured(d.configured !== false);
+        setKeyKind(typeof d.keyKind === 'string' ? d.keyKind : null);
       })
       .catch(() => setPending(0));
   }, [user, apiFetch]);
@@ -55,6 +57,24 @@ export function MigrateFilesBanner({ onMoved }: { onMoved?: () => void }) {
       <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">
         File storage isn&apos;t switched on yet, so uploads won&apos;t work. The storage key needs to be added
         to the website settings — see the message from your developer.
+      </div>
+    );
+  }
+  const wrongKey: Record<string, string> = {
+    publishable: 'the publishable key (sb_publishable_…)',
+    anon: 'the anon key',
+    other_jwt: 'a JWT that is not the service_role key',
+    not_a_key: 'something that is not an API key (perhaps the JWT Secret or a URL)',
+  };
+  if (keyKind && wrongKey[keyKind]) {
+    return (
+      <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900 space-y-1">
+        <p className="font-semibold">The storage key in Vercel is the wrong one.</p>
+        <p>
+          <code>SUPABASE_SERVICE_ROLE_KEY</code> currently holds {wrongKey[keyKind]}. In Supabase → Project Settings →
+          API Keys, copy the <strong>secret</strong> key (starts with <code>sb_secret_</code>) or the legacy
+          <strong> service_role</strong> key (starts with <code>eyJ</code>), paste it into Vercel, and redeploy.
+        </p>
       </div>
     );
   }
