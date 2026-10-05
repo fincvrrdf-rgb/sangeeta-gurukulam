@@ -12,7 +12,8 @@ import { NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { createDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { createDoc, queryDocs, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { COLLECTIONS } from '@/domain/constants';
 import type { ClassSlot } from '@/domain/types';
@@ -80,6 +81,25 @@ export async function POST(request: NextRequest) {
 
     if (!batchBandId) {
       return Response.json({ error: 'Provide batchBandId or batchBandCode' }, { status: 400 });
+    }
+
+    // One active slot per batch + weekday: update the existing one instead of
+    // creating a duplicate (duplicates each generated their own daily class).
+    const bandCodes = await loadBandCodes();
+    const thisBatch = batchKey(bandCodes, batchBandId);
+    const sameDay = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_SLOTS, [
+      { type: 'where', field: 'dayOfWeek', op: '==', value: dayOfWeek },
+      { type: 'where', field: 'isActive', op: '==', value: true },
+    ]);
+    const existing = sameDay.find((s) => batchKey(bandCodes, s.batchBandId) === thisBatch);
+    if (existing && slotType === 'regular') {
+      await updateDoc(COLLECTIONS.CLASS_SLOTS, existing.id, {
+        startTimeLocal: startTimeIST,
+        endTimeLocal: endTimeIST,
+        isActive,
+        updatedAt: nowISO(),
+      });
+      return Response.json({ success: true, slotId: existing.id, updated: true });
     }
 
     const slotId = await createDoc(COLLECTIONS.CLASS_SLOTS, {
