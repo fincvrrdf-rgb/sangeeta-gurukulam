@@ -73,10 +73,22 @@ export function MigrateFilesBanner({ onMoved }: { onMoved?: () => void }) {
         </div>
       )}
       {result && (
-        <p className="text-teal-900">
-          Moved {result.moved} file{result.moved === 1 ? '' : 's'}.
-          {result.failed.length === 0 ? ' Everything now opens from the new storage.' : ''}
-        </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-teal-900">
+            Moved {result.moved} file{result.moved === 1 ? '' : 's'}.
+            {result.failed.length === 0 ? ' Everything now opens from the new storage.' : ''}
+          </p>
+          <div className="flex gap-2">
+            {result.failed.length > 0 && (
+              <button onClick={run} disabled={running} className="btn-primary text-xs px-3 py-1.5">
+                {running ? 'Trying again…' : 'Try again'}
+              </button>
+            )}
+            <button onClick={() => window.location.reload()} className="text-xs text-teal-700 underline">
+              Refresh list
+            </button>
+          </div>
+        </div>
       )}
       {result && result.failed.length > 0 && (
         <div className="text-xs text-amber-900 space-y-1">
