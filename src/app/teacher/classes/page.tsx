@@ -150,21 +150,30 @@ function StudentRow({
     }
   }
 
-  const info = student.status === null
-    ? 'Not recorded'
-    : student.joinedAt
-      ? `Joined at ${istTime(student.joinedAt)}${
-          cls.teacherJoinedAt ? ` (${relativeToTeacher(student.joinedAt, cls.teacherJoinedAt)})` : ''
-        }${student.viaLink ? '' : ' · edited by you'}`
-      : 'Marked by you';
-
   return (
-    <li className="px-3 py-2 space-y-1">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="min-w-0 flex-1 basis-40">
-          <p className="text-sm text-charcoal truncate">{student.name}</p>
-          <p className={`text-xs ${student.status === null ? 'text-orange-600' : 'text-gray-400'}`}>{info}</p>
-        </div>
+    <tr className="align-middle">
+      <td className="px-3 py-2 whitespace-nowrap">
+        <p className="text-sm text-charcoal">{formatDay(cls.date)}</p>
+        <p className="text-xs text-gray-400">{istTime(cls.start)} – {istTime(cls.end)}</p>
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 tabular-nums">
+        {cls.teacherJoinedAt ? istTime(cls.teacherJoinedAt) : <span className="text-gray-300">—</span>}
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {student.joinedAt ? (
+          <>
+            <p className="text-sm text-gray-600 tabular-nums">{istTime(student.joinedAt)}</p>
+            {cls.teacherJoinedAt && (
+              <p className="text-[11px] text-gray-400">{relativeToTeacher(student.joinedAt, cls.teacherJoinedAt)}</p>
+            )}
+          </>
+        ) : student.status === null ? (
+          <span className="text-xs text-orange-600">Not recorded</span>
+        ) : (
+          <span className="text-xs text-gray-400">Marked by you</span>
+        )}
+      </td>
+      <td className="px-3 py-2">
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -179,6 +188,8 @@ function StudentRow({
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+      </td>
+      <td className="px-3 py-2">
         <div className="flex items-center gap-1">
           <input
             type="number"
@@ -193,6 +204,8 @@ function StudentRow({
           />
           <span className="text-xs text-gray-400">min</span>
         </div>
+      </td>
+      <td className="px-3 py-2 text-right">
         <button
           onClick={save}
           disabled={!dirty || saving || (!status && !minutes)}
@@ -200,62 +213,76 @@ function StudentRow({
         >
           {saving ? '…' : 'Save'}
         </button>
-      </div>
-      {err && <p className="text-xs text-red-600">{err}</p>}
-    </li>
+        {err && <p className="text-[11px] text-red-600 mt-0.5">{err}</p>}
+      </td>
+    </tr>
   );
 }
 
-function ClassCard({
-  cls,
+const fmtMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60 ? `${m % 60}m` : ''}`.trim() : `${m}m`);
+
+interface StudentSheet {
+  studentId: string;
+  name: string;
+  batch: string;
+  rows: { cls: ClassJoins; student: StudentAttendance }[];
+}
+
+function StudentTable({
+  sheet,
   apiFetch,
   onStudentSaved,
 }: {
-  cls: ClassJoins;
+  sheet: StudentSheet;
   apiFetch: ApiFetch;
   onStudentSaved: (classKey: string, updated: StudentAttendance) => void;
 }) {
-  const present = cls.students.filter((s) => s.status && PRESENT.has(s.status)).length;
-  const unrecorded = cls.students.filter((s) => s.status === null).length;
-  return (
-    <div className="card space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`badge ${BATCH_COLORS[cls.batch] ?? 'badge-neutral'}`}>Batch {cls.batch}</span>
-          <span className="text-sm font-semibold text-charcoal">{formatDay(cls.date)}</span>
-          <span className="text-sm text-gray-500">{istTime(cls.start)} – {istTime(cls.end)}</span>
-          {cls.cancelled && <span className="badge badge-error">Cancelled</span>}
-        </div>
-        {!cls.cancelled && (
-          <span className={`text-xs ${cls.teacherJoinedAt ? 'text-teal-700' : 'text-gray-400'}`}>
-            {cls.teacherJoinedAt ? `You joined at ${istTime(cls.teacherJoinedAt)}` : 'Your join not recorded'}
-          </span>
-        )}
-        {!cls.cancelled && (
-          <span className="text-sm font-semibold text-charcoal">
-            {present}
-            <span className="text-gray-400 font-normal"> / {cls.students.length} present</span>
-            {unrecorded > 0 && <span className="text-xs text-orange-600 font-normal"> · {unrecorded} not recorded</span>}
-          </span>
-        )}
-      </div>
+  const present = sheet.rows.filter((r) => r.student.status && PRESENT.has(r.student.status));
+  const minutes = present.reduce((sum, r) => sum + (r.student.durationMinutes ?? 0), 0);
+  const untimed = present.filter((r) => r.student.durationMinutes == null).length;
+  const unrecorded = sheet.rows.filter((r) => r.student.status === null).length;
 
-      {!cls.cancelled && cls.students.length > 0 && (
-        <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
-          {cls.students.map((s) => (
-            <StudentRow
-              key={`${s.studentId}|${s.status}|${s.durationMinutes}`}
-              cls={cls}
-              student={s}
-              apiFetch={apiFetch}
-              onSaved={(u) => onStudentSaved(cls.key, u)}
-            />
-          ))}
-        </ul>
-      )}
-      {!cls.cancelled && cls.students.length === 0 && (
-        <p className="text-xs text-gray-400">No students enrolled in this batch.</p>
-      )}
+  return (
+    <div className="card p-0 overflow-hidden">
+      <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-charcoal">{sheet.name}</h3>
+          <span className={`badge ${BATCH_COLORS[sheet.batch] ?? 'badge-neutral'}`}>Batch {sheet.batch}</span>
+        </div>
+        <p className="text-sm text-charcoal">
+          <span className="font-semibold">{present.length}</span>
+          <span className="text-gray-400"> / {sheet.rows.length} classes · </span>
+          <span className="font-semibold">{fmtMinutes(minutes)}</span>
+          <span className="text-gray-400"> taught</span>
+          {untimed > 0 && <span className="block text-[11px] text-gray-400 text-right">{untimed} without minutes</span>}
+          {unrecorded > 0 && <span className="block text-[11px] text-orange-600 text-right">{unrecorded} not recorded</span>}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-500 text-left bg-gray-50">
+              <th className="px-3 py-2 font-medium">Class</th>
+              <th className="px-3 py-2 font-medium">You joined</th>
+              <th className="px-3 py-2 font-medium">Student joined</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Minutes</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {sheet.rows.map(({ cls, student }) => (
+              <StudentRow
+                key={`${cls.key}|${student.status}|${student.durationMinutes}`}
+                cls={cls}
+                student={student}
+                apiFetch={apiFetch}
+                onSaved={(u) => onStudentSaved(cls.key, u)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -375,25 +402,20 @@ export default function ClassesPage() {
   const visible = classes.filter((c) => batchFilter === 'all' || c.batch === batchFilter);
   const batchesWithClasses = [...new Set(classes.map((c) => c.batch))].sort();
 
-  // Per-student totals for the selected period and batch
-  const totals = new Map<string, { name: string; batch: string; present: number; minutes: number; untimed: number }>();
+  // One sheet per student: their classes, newest first (classes already sorted)
+  const sheetMap = new Map<string, StudentSheet>();
   for (const c of visible) {
     if (c.cancelled) continue;
-    for (const s of c.students) {
-      const t = totals.get(s.studentId) ?? { name: s.name, batch: c.batch, present: 0, minutes: 0, untimed: 0 };
-      if (s.status && PRESENT.has(s.status)) {
-        t.present++;
-        if (s.durationMinutes != null) t.minutes += s.durationMinutes;
-        else t.untimed++;
-      }
-      totals.set(s.studentId, t);
+    for (const st of c.students) {
+      const sheet = sheetMap.get(st.studentId) ?? { studentId: st.studentId, name: st.name, batch: c.batch, rows: [] };
+      sheet.rows.push({ cls: c, student: st });
+      sheetMap.set(st.studentId, sheet);
     }
   }
-  const totalRows = [...totals.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
-  const fmtMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60 ? `${m % 60}m` : ''}`.trim() : `${m}m`);
+  const sheets = [...sheetMap.values()].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
 
       {error && <div className="card border-red-300 bg-red-50 text-red-800 text-sm">{error}</div>}
@@ -457,7 +479,7 @@ export default function ClassesPage() {
           <div>
             <h2 className="font-heading text-lg font-semibold text-charcoal">Attendance</h2>
             <p className="text-xs text-gray-500">
-              Filled in automatically when a student clicks Join. Change anything and press Save; add minutes to record how long you taught each student.
+              One table per student. Filled in automatically when you and the student click Join; change anything and press Save, and add the minutes you taught.
             </p>
           </div>
           <div className="flex gap-1.5 flex-wrap">
@@ -486,39 +508,6 @@ export default function ClassesPage() {
           </div>
         </div>
 
-        {/* Per-student totals */}
-        {!loading && totalRows.length > 0 && (
-          <div className="card p-0 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 text-left border-b border-gray-100">
-                  <th className="px-3 py-2 font-medium">Student</th>
-                  <th className="px-3 py-2 font-medium">Batch</th>
-                  <th className="px-3 py-2 font-medium text-right">Classes</th>
-                  <th className="px-3 py-2 font-medium text-right">Time taught</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {totalRows.map(([id, t]) => (
-                  <tr key={id}>
-                    <td className="px-3 py-2 text-charcoal">{t.name}</td>
-                    <td className="px-3 py-2 text-gray-500">{t.batch}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{t.present}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {fmtMinutes(t.minutes)}
-                      {t.untimed > 0 && (
-                        <span className="block text-[11px] text-gray-400">
-                          {t.untimed} class{t.untimed !== 1 ? 'es' : ''} without minutes
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
         {loading &&
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card animate-pulse space-y-2">
@@ -527,13 +516,13 @@ export default function ClassesPage() {
             </div>
           ))}
 
-        {!loading && visible.length === 0 && (
+        {!loading && sheets.length === 0 && (
           <div className="card text-center py-10 text-sm text-gray-500">No classes in this period.</div>
         )}
 
         {!loading &&
-          visible.map((c) => (
-            <ClassCard key={c.key} cls={c} apiFetch={apiFetch} onStudentSaved={handleStudentSaved} />
+          sheets.map((sheet) => (
+            <StudentTable key={sheet.studentId} sheet={sheet} apiFetch={apiFetch} onStudentSaved={handleStudentSaved} />
           ))}
       </div>
     </div>
