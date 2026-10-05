@@ -1,9 +1,15 @@
 /**
  * Practice Recording — /student/practice/record
  *
- * Students select a teaching unit, record audio in-browser via InAppRecorder,
- * then upload the blob to Firebase Storage and submit metadata to /api/recordings.
- * Wrapped in ConsentGate so recording only begins after explicit consent.
+ * Students pick what they're practising (a syllabus unit, or general practice),
+ * record in the browser, and submit. Before upload the recording is
+ * pitch-analysed in the browser against their Sa and the raga; the server
+ * turns that into AI preliminary review points.
+ *
+ * Upload goes straight from the browser to storage (no server size limit):
+ * Supabase via a signed URL, falling back to Firebase Storage if Supabase
+ * isn't available. Wrapped in ConsentGate so recording only begins after
+ * explicit consent.
  */
 
 'use client';
@@ -13,6 +19,16 @@ import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 import { ConsentGate } from '@/components/recording/ConsentGate';
 import { InAppRecorder } from '@/components/recording/InAppRecorder';
+import { ref as storageRef, uploadBytesResumable } from 'firebase/storage';
+import { storage } from '@/lib/firebase/client';
+import { uploadFile } from '@/lib/storage/upload-client';
+import { STORAGE_PATHS } from '@/domain/constants';
+import { analyzeRecording } from '@/lib/music/analyze-audio';
+import { findRaga } from '@/lib/music/ragas';
+import type { RecordingAnalysis } from '@/lib/music/analyze';
+import {
+  AiReviewCard, RagaPicker, SaPicker, saHzOf, useSaPitch, type AiReviewData,
+} from '@/components/recording/AiReview';
 
 interface TeachingUnit {
   id: string;
@@ -23,7 +39,9 @@ interface TeachingUnit {
   lessonId: string;
 }
 
-type UploadStage = 'idle' | 'uploading' | 'saving' | 'success' | 'error';
+type UploadStage = 'idle' | 'analysing' | 'uploading' | 'saving' | 'success' | 'error';
+
+const GENERAL = 'general';
 
 /** Returns the ISO week string YYYY-WW for the current date */
 function currentWeekOf(): string {
@@ -48,10 +66,13 @@ export default function PracticeRecordPage() {
 
   const [units, setUnits] = useState<TeachingUnit[]>([]);
   const [loadingUnits, setLoadingUnits] = useState(true);
-  const [unitsError, setUnitsError] = useState<string | null>(null);
 
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [studentNote, setStudentNote] = useState('');
+  const [pieceName, setPieceName] = useState('');
+  const [saPitch, setSaPitch] = useSaPitch();
+  const [ragaName, setRagaName] = useState('');
+  const [aiReview, setAiReview] = useState<AiReviewData | null>(null);
 
   // Recording result
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
@@ -77,9 +98,12 @@ export default function PracticeRecordPage() {
           (u: TeachingUnit) => u.id && u.unitName,
         );
         setUnits(unitList);
-        if (unitList.length > 0) setSelectedUnitId(unitList[0].id);
+        setSelectedUnitId(unitList.length > 0 ? unitList[0].id : GENERAL);
       })
-      .catch((err) => setUnitsError(err.message ?? 'Could not load units.'))
+      .catch(() => {
+        // Units are optional — fall back to general practice
+        setSelectedUnitId(GENERAL);
+      })
       .finally(() => setLoadingUnits(false));
   }, [user, apiFetch]);
 
@@ -103,7 +127,7 @@ export default function PracticeRecordPage() {
   }, []);
 
   const handleUpload = useCallback(async () => {
-    if (!pendingBlob || !user || !selectedUnitId) return;
+    if (!pendingBlob || !user) return;
 
     setUploadStage('uploading');
     setUploadProgress(0);
@@ -117,40 +141,69 @@ export default function PracticeRecordPage() {
         ? 'mp4'
         : 'webm';
       const fileName = `${Date.now()}.${ext}`;
+      const unitForPath = selectedUnitId || GENERAL;
 
-      // Upload through our server, which stores the file in Supabase Storage
-      // (free tier) — Firebase Storage rejected uploads on this project.
-      const uploadRes = await apiFetch('/api/recordings/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': pendingMime,
-          'x-teaching-unit-id': selectedUnitId,
-          'x-week-of': weekOf,
-          'x-file-name': fileName,
-        },
-        body: pendingBlob,
-      });
-      setUploadProgress(100);
-      if (!uploadRes.ok) {
-        const body = await uploadRes.json().catch(() => ({}));
-        throw new Error(body.error ?? `Upload failed (${uploadRes.status})`);
+      // 1. Pitch analysis in the browser (never blocks submitting)
+      setUploadStage('analysing');
+      let analysis: RecordingAnalysis | undefined;
+      try {
+        analysis = await analyzeRecording(pendingBlob, saHzOf(saPitch), ragaName || null, (p) =>
+          setUploadProgress(Math.round(p * 100)),
+        );
+      } catch (err) {
+        console.warn('Recording analysis failed', err);
       }
-      const { storagePath, storageProvider } = await uploadRes.json();
+
+      // 2. Upload straight to storage
+      setUploadStage('uploading');
+      setUploadProgress(0);
+      let storagePath: string;
+      let storageProvider: 'supabase' | 'firebase';
+      try {
+        const file = new File([pendingBlob], fileName, { type: pendingMime });
+        const up = await uploadFile(
+          apiFetch,
+          { kind: 'recording', teachingUnitId: unitForPath, weekOf },
+          file,
+          setUploadProgress,
+        );
+        storagePath = up.path;
+        storageProvider = 'supabase';
+      } catch (supabaseErr) {
+        console.warn('Supabase upload failed, trying Firebase Storage', supabaseErr);
+        storagePath = STORAGE_PATHS.recording(user.uid, unitForPath, weekOf, fileName);
+        storageProvider = 'firebase';
+        await new Promise<void>((resolve, reject) => {
+          const task = uploadBytesResumable(storageRef(storage, storagePath), pendingBlob, { contentType: pendingMime });
+          task.on(
+            'state_changed',
+            (snap) => setUploadProgress(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
+            (err) => reject(new Error(
+              `Upload failed — ${supabaseErr instanceof Error ? supabaseErr.message : 'storage unavailable'}; ` +
+              `backup storage: ${err.message}`,
+            )),
+            () => resolve(),
+          );
+        });
+      }
+      setUploadProgress(100);
 
       // Save metadata
       setUploadStage('saving');
       const res = await apiFetch('/api/recordings', {
         method: 'POST',
         body: JSON.stringify({
-          teachingUnitId: selectedUnitId,
+          teachingUnitId: unitForPath,
+          pieceName: unitForPath === GENERAL ? pieceName.trim() || undefined : undefined,
           storagePath,
-          storageProvider: storageProvider ?? 'supabase',
+          storageProvider,
           fileName,
           mimeType: pendingMime,
           fileSizeBytes: pendingBlob.size,
           durationSeconds: pendingDuration,
           consentGiven: true,
           studentNote: studentNote.trim() || undefined,
+          analysis,
         }),
       });
 
@@ -159,8 +212,9 @@ export default function PracticeRecordPage() {
         throw new Error(body.error ?? `Server error (${res.status})`);
       }
 
-      const { recordingId } = await res.json();
-      setSuccessRecordingId(recordingId);
+      const saved = await res.json();
+      setSuccessRecordingId(saved.recordingId);
+      setAiReview(saved.aiReview ?? null);
       setUploadStage('success');
       setPendingBlob(null);
     } catch (err: unknown) {
@@ -176,6 +230,9 @@ export default function PracticeRecordPage() {
     user,
     selectedUnitId,
     studentNote,
+    pieceName,
+    saPitch,
+    ragaName,
     apiFetch,
   ]);
 
@@ -189,7 +246,13 @@ export default function PracticeRecordPage() {
   }, [pendingBlobUrl]);
 
   const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? null;
-  const isUploading = uploadStage === 'uploading' || uploadStage === 'saving';
+  const isUploading = uploadStage === 'analysing' || uploadStage === 'uploading' || uploadStage === 'saving';
+
+  // Pre-select the unit's raga when we know it
+  useEffect(() => {
+    const r = findRaga(selectedUnit?.ragam);
+    setRagaName(r ? r.name : '');
+  }, [selectedUnit?.ragam]);
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8 space-y-8">
@@ -221,6 +284,7 @@ export default function PracticeRecordPage() {
           <p className="text-xs text-green-700">
             Your teacher will review it and provide feedback soon.
           </p>
+          {aiReview && <AiReviewCard review={aiReview} />}
           <div className="flex gap-3 pt-1">
             <Link
               href="/student/practice/history"
@@ -235,6 +299,7 @@ export default function PracticeRecordPage() {
                 setUploadStage('idle');
                 setSuccessRecordingId(null);
                 setStudentNote('');
+                setAiReview(null);
               }}
             >
               Record Another
@@ -251,44 +316,58 @@ export default function PracticeRecordPage() {
           <div className="space-y-6">
             {/* Teaching unit selector */}
             <div className="card space-y-4">
-              <h2 className="section-title text-base">1. Select Teaching Unit</h2>
+              <h2 className="section-title text-base">1. What are you practising?</h2>
 
               {loadingUnits ? (
                 <SkeletonSelect />
-              ) : unitsError ? (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-                  &#9888;&#65039; {unitsError}
-                </div>
-              ) : units.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">
-                  No teaching units found. Please contact your teacher.
-                </p>
               ) : (
-                <div>
-                  <label
-                    htmlFor="unitSelect"
-                    className="block text-sm font-medium text-charcoal mb-1.5"
-                  >
-                    Unit <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="unitSelect"
-                    className="input"
-                    value={selectedUnitId}
-                    onChange={(e) => setSelectedUnitId(e.target.value)}
-                    disabled={!!pendingBlob}
-                  >
-                    {units.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.unitName}
-                        {u.unitType ? ` (${u.unitType})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-3">
+                  {units.length > 0 && (
+                    <div>
+                      <label
+                        htmlFor="unitSelect"
+                        className="block text-sm font-medium text-charcoal mb-1.5"
+                      >
+                        Lesson / piece
+                      </label>
+                      <select
+                        id="unitSelect"
+                        className="input"
+                        value={selectedUnitId}
+                        onChange={(e) => setSelectedUnitId(e.target.value)}
+                        disabled={isUploading}
+                      >
+                        {units.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.unitName}
+                            {u.unitType ? ` (${u.unitType})` : ''}
+                          </option>
+                        ))}
+                        <option value={GENERAL}>Something else / general practice</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {selectedUnitId === GENERAL && (
+                    <div>
+                      <label htmlFor="pieceName" className="block text-sm font-medium text-charcoal mb-1.5">
+                        What did you sing? <span className="text-gray-400 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        id="pieceName"
+                        className="input"
+                        placeholder="e.g. Sarali varisai 1–5, or the song name"
+                        value={pieceName}
+                        onChange={(e) => setPieceName(e.target.value)}
+                        maxLength={120}
+                        disabled={isUploading}
+                      />
+                    </div>
+                  )}
 
                   {/* Selected unit info */}
                   {selectedUnit && (selectedUnit.ragam || selectedUnit.taalam) && (
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="flex flex-wrap gap-2">
                       {selectedUnit.ragam && (
                         <span className="badge badge-info">
                           Ragam: {selectedUnit.ragam}
@@ -301,6 +380,14 @@ export default function PracticeRecordPage() {
                       )}
                     </div>
                   )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <SaPicker value={saPitch} onChange={setSaPitch} disabled={isUploading} />
+                    <RagaPicker value={ragaName} onChange={setRagaName} disabled={isUploading} />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Used by the AI check to see whether each swara is in tune.
+                  </p>
                 </div>
               )}
             </div>
@@ -364,9 +451,11 @@ export default function PracticeRecordPage() {
                 {isUploading && (
                   <div className="space-y-1">
                     <p className="text-xs text-gray-500">
-                      {uploadStage === 'uploading'
+                      {uploadStage === 'analysing'
+                        ? `AI checking your pitch… ${uploadProgress}%`
+                        : uploadStage === 'uploading'
                         ? `Uploading… ${uploadProgress}%`
-                        : 'Saving record…'}
+                        : 'Saving and writing review points…'}
                     </p>
                     <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                       <div
@@ -402,13 +491,13 @@ export default function PracticeRecordPage() {
                   <button
                     type="button"
                     onClick={handleUpload}
-                    disabled={isUploading || !selectedUnitId}
+                    disabled={isUploading}
                     className="btn-primary flex-1"
                   >
                     {isUploading ? (
                       <>
                         <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        {uploadStage === 'saving' ? 'Saving…' : `${uploadProgress}%`}
+                        {uploadStage === 'saving' ? 'Saving…' : uploadStage === 'analysing' ? 'Checking…' : `${uploadProgress}%`}
                       </>
                     ) : (
                       'Submit Recording'

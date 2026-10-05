@@ -7,6 +7,7 @@
  *   kind 'lyrics'   → materials/lyrics/{lyricsId}/…      (teacher/admin; public file)
  *   kind 'resource' → materials/resources/{uid}/…        (teacher/admin; public file)
  *   kind 'payment'  → payment-proofs/{uid}/{cycleMonth}/… (student; private)
+ *   kind 'recording' → recordings/recordings/{uid}/{unit}/{weekOf}/… (anyone, own folder; private)
  * Returns { uploadUrl, bucket, path, publicUrl? }. The browser PUTs the file to
  * uploadUrl, then saves bucket/path (and publicUrl) with the record.
  */
@@ -14,15 +15,18 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { BUCKETS, createSignedUploadUrl, supabaseConfigured, supabasePublicUrl } from '@/lib/storage/supabase';
+import { STORAGE_PATHS } from '@/domain/constants';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
 const Schema = z.object({
-  kind: z.enum(['lyrics', 'resource', 'payment']),
+  kind: z.enum(['lyrics', 'resource', 'payment', 'recording']),
   fileName: z.string().min(1).max(200),
   lyricsId: z.string().regex(/^[\w-]+$/).optional(),
   cycleMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  teachingUnitId: z.string().regex(/^[\w-]+$/).optional(),
+  weekOf: z.string().regex(/^\d{4}-\d{2}$/).optional(),
 });
 
 function safeName(name: string): string {
@@ -42,12 +46,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { kind, fileName, lyricsId, cycleMonth } = parsed.data;
+    const { kind, fileName, lyricsId, cycleMonth, teachingUnitId, weekOf } = parsed.data;
     const isStaff = auth.role === 'teacher' || auth.role === 'super_admin';
     let bucket: string;
     let path: string;
 
-    if (kind === 'payment') {
+    if (kind === 'recording') {
+      if (!weekOf) return Response.json({ error: 'weekOf is required' }, { status: 400 });
+      bucket = BUCKETS.recordings;
+      path = STORAGE_PATHS.recording(auth.uid, teachingUnitId || 'general', weekOf, safeName(fileName));
+    } else if (kind === 'payment') {
       if (auth.role !== 'student') return Response.json({ error: 'Only students upload payment proofs' }, { status: 403 });
       if (!cycleMonth) return Response.json({ error: 'cycleMonth is required' }, { status: 400 });
       bucket = BUCKETS.paymentProofs;

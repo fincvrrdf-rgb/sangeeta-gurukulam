@@ -3,7 +3,8 @@
  *
  * Shows recording details and audio player.
  * Allows teacher to submit a review with status, feedback, and optional scores.
- * Supports running AI pitch check.
+ * Shows the AI preliminary review (pitch measured against the student's Sa and
+ * the raga) and lets the teacher re-run it, e.g. with a corrected Sa.
  */
 
 'use client';
@@ -13,6 +14,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { ref as storageRef, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { analyzeRecording } from '@/lib/music/analyze-audio';
+import { findRaga, PITCH_FREQS } from '@/lib/music/ragas';
+import {
+  AiReviewCard, RagaPicker, SaPicker, saHzOf, type AiReviewData,
+} from '@/components/recording/AiReview';
 
 type ReviewStatus = 'accepted' | 'needs_improvement' | 'rejected';
 
@@ -26,6 +32,19 @@ interface RecordingDetail {
   existingFeedback?: string | null;
   pitchScore?: number | null;
   rhythmScore?: number | null;
+  studentNote?: string | null;
+  ragam?: string | null;
+  aiReview?: AiReviewData | null;
+  analysis?: { saHz: number; ragaName: string | null } | null;
+}
+
+/** Nearest Sa pitch name for a frequency */
+function pitchNameOf(hz: number): string {
+  let best = 'C';
+  for (const [name, f] of Object.entries(PITCH_FREQS)) {
+    if (Math.abs(Math.log2(f / hz)) < Math.abs(Math.log2(PITCH_FREQS[best] / hz))) best = name;
+  }
+  return best;
 }
 
 const REVIEW_STATUSES: { value: ReviewStatus; label: string; badgeClass: string }[] = [
@@ -59,9 +78,11 @@ export default function RecordingReviewPage() {
   const [rhythmScore, setRhythmScore] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Pitch check
-  const [runningPitchCheck, setRunningPitchCheck] = useState(false);
-  const [pitchResult, setPitchResult] = useState<string | null>(null);
+  // AI preliminary review
+  const [aiReview, setAiReview] = useState<AiReviewData | null>(null);
+  const [aiSa, setAiSa] = useState('C');
+  const [aiRaga, setAiRaga] = useState('');
+  const [aiRunning, setAiRunning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -74,6 +95,9 @@ export default function RecordingReviewPage() {
         if (rec.existingFeedback) setFeedback(rec.existingFeedback);
         if (rec.pitchScore != null) setPitchScore(String(rec.pitchScore));
         if (rec.rhythmScore != null) setRhythmScore(String(rec.rhythmScore));
+        setAiReview(rec.aiReview ?? null);
+        if (rec.analysis?.saHz) setAiSa(pitchNameOf(rec.analysis.saHz));
+        setAiRaga(rec.analysis?.ragaName ?? findRaga(rec.ragam)?.name ?? '');
         if (rec.audioUrl) {
           // Supabase-stored recording: server already produced a signed URL
           setAudioUrl(rec.audioUrl);
@@ -125,19 +149,32 @@ export default function RecordingReviewPage() {
     }
   }
 
-  async function handlePitchCheck() {
-    setRunningPitchCheck(true);
-    setPitchResult(null);
+  async function handleAiCheck() {
+    if (!audioUrl) return;
     setError(null);
     try {
-      const res = await apiFetch(`/api/recordings/${id}/pitch-check`, { method: 'POST' });
-      if (!res.ok) throw new Error(`Pitch check failed (${res.status})`);
-      const data = await res.json();
-      setPitchResult(data.summary ?? data.result ?? 'Pitch check complete.');
+      setAiRunning('Downloading audio…');
+      const audioRes = await fetch(audioUrl).catch(() => {
+        throw new Error('The browser could not download this recording for checking (older storage). New recordings are checked automatically when submitted.');
+      });
+      if (!audioRes.ok) throw new Error(`Could not download the audio (${audioRes.status})`);
+      const buf = await audioRes.arrayBuffer();
+      const analysis = await analyzeRecording(buf, saHzOf(aiSa), aiRaga || null, (p) =>
+        setAiRunning(`Checking pitch… ${Math.round(p * 100)}%`),
+      );
+      setAiRunning('Writing review points…');
+      const res = await apiFetch(`/api/recordings/${id}/ai-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysis }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `AI check failed (${res.status})`);
+      setAiReview(data.aiReview);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Pitch check failed.');
+      setError(err instanceof Error ? err.message : 'AI check failed.');
     } finally {
-      setRunningPitchCheck(false);
+      setAiRunning(null);
     }
   }
 
@@ -239,23 +276,32 @@ export default function RecordingReviewPage() {
           </p>
         )}
 
-        <div className="flex items-center justify-between pt-1">
-          <button
-            onClick={handlePitchCheck}
-            disabled={runningPitchCheck}
-            className="btn-secondary text-sm"
-          >
-            {runningPitchCheck ? 'Analysing…' : '🎵 Run Pitch Check'}
-          </button>
-        </div>
-
-        {/* Pitch Check Result */}
-        {pitchResult && (
-          <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3">
-            <p className="text-xs font-semibold text-teal-700 mb-1">Pitch Check Result</p>
-            <p className="text-sm text-teal-900 whitespace-pre-wrap">{pitchResult}</p>
-          </div>
+        {recording.studentNote && (
+          <p className="text-sm text-gray-600">
+            <span className="text-xs text-gray-500">Student&apos;s note: </span>{recording.studentNote}
+          </p>
         )}
+      </div>
+
+      {/* AI preliminary review */}
+      <div className="card space-y-3">
+        <h2 className="section-title">AI Check</h2>
+        {aiReview ? (
+          <AiReviewCard review={aiReview} />
+        ) : (
+          <p className="text-sm text-gray-500">No AI review yet for this recording.</p>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <SaPicker value={aiSa} onChange={setAiSa} disabled={!!aiRunning} />
+          <RagaPicker value={aiRaga} onChange={setAiRaga} disabled={!!aiRunning} />
+        </div>
+        <button
+          onClick={handleAiCheck}
+          disabled={!!aiRunning || !audioUrl}
+          className="btn-secondary text-sm"
+        >
+          {aiRunning ?? (aiReview ? '🎵 Re-run AI check' : '🎵 Run AI check')}
+        </button>
       </div>
 
       {/* Review Form */}

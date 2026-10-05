@@ -36,7 +36,7 @@ export async function GET(
     // Parallel lookups for enrichment
     const [studentProfile, teachingUnit, lastReview] = await Promise.all([
       getDoc<{ fullName?: string }>(COLLECTIONS.STUDENT_PROFILES, recording.studentId as string),
-      getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, recording.teachingUnitId as string),
+      getDoc<{ unitName?: string; ragam?: string | null }>(COLLECTIONS.TEACHING_UNITS, recording.teachingUnitId as string),
       recording.lastReviewId
         ? getDoc<{ feedback?: string | null; scores?: Record<string, number> | null; status?: string }>(
             COLLECTIONS.RECORDING_REVIEWS,
@@ -61,7 +61,9 @@ export async function GET(
       ...recording,
       audioUrl,
       studentName:    studentProfile?.fullName ?? '',
-      unitName:       teachingUnit?.unitName ?? (recording.teachingUnitId as string) ?? '',
+      unitName:       teachingUnit?.unitName || (recording.pieceName as string) ||
+                      (recording.teachingUnitId === 'general' ? 'General practice' : (recording.teachingUnitId as string) ?? ''),
+      ragam:          teachingUnit?.ragam ?? null,
       existingFeedback: lastReview?.feedback ?? null,
       pitchScore:     lastReview?.scores?.pitchScore ?? null,
       rhythmScore:    lastReview?.scores?.rhythmScore ?? null,

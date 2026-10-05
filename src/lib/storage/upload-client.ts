@@ -13,7 +13,13 @@ export interface UploadedFile {
 
 export async function uploadFile(
   apiFetch: ApiFetch,
-  request: { kind: 'lyrics' | 'resource' | 'payment'; lyricsId?: string; cycleMonth?: string },
+  request: {
+    kind: 'lyrics' | 'resource' | 'payment' | 'recording';
+    lyricsId?: string;
+    cycleMonth?: string;
+    teachingUnitId?: string;
+    weekOf?: string;
+  },
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<UploadedFile> {
