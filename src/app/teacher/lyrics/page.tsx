@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase/client';
-import { STORAGE_PATHS } from '@/domain/constants';
+import { uploadFile } from '@/lib/storage/upload-client';
+import { MigrateFilesBanner } from '@/components/storage/MigrateFilesBanner';
 
 type LyricsStatus = 'draft' | 'published';
 type FilterValue = 'all' | LyricsStatus;
@@ -95,17 +94,9 @@ export default function LyricsListPage() {
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const { id } = await res.json();
 
-      // 2. Upload file to storage
-      const storagePath = STORAGE_PATHS.lyricsAttachment(id, `${Date.now()}_${file.name}`);
-      const storageRef = ref(storage, storagePath);
-      const task = uploadBytesResumable(storageRef, file);
-      await new Promise<void>((resolve, reject) => {
-        task.on('state_changed',
-          (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-          reject, resolve,
-        );
-      });
-      const downloadUrl = await getDownloadURL(storageRef);
+      // 2. Upload the file to Supabase Storage (public 'materials' bucket)
+      const uploaded = await uploadFile(apiFetch, { kind: 'lyrics', lyricsId: id }, file, setUploadProgress);
+      const downloadUrl = uploaded.publicUrl ?? '';
 
       // 3. Attach file to lyrics
       await apiFetch(`/api/lyrics/${id}`, {
@@ -163,6 +154,7 @@ export default function LyricsListPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <MigrateFilesBanner onMoved={() => window.location.reload()} />
       <div className="flex items-center justify-between">
         <h1 className="font-heading text-2xl font-bold text-charcoal">Lyrics</h1>
 

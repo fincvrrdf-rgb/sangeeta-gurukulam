@@ -11,9 +11,7 @@ import { useEffect, useState, useRef, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/layout/AuthProvider';
-import { storage } from '@/lib/firebase/client';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { STORAGE_PATHS } from '@/domain/constants';
+import { uploadFile } from '@/lib/storage/upload-client';
 
 interface AttachedFile {
   name: string;
@@ -166,18 +164,9 @@ export default function LyricsDetailPage() {
     setUploadProgress(0);
     setError(null);
     try {
-      const storagePath = STORAGE_PATHS.lyricsAttachment(id, `${Date.now()}_${file.name}`);
-      const storageRef = ref(storage, storagePath);
-      const task = uploadBytesResumable(storageRef, file);
-      await new Promise<void>((resolve, reject) => {
-        task.on(
-          'state_changed',
-          (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-          reject,
-          resolve,
-        );
-      });
-      const downloadUrl = await getDownloadURL(storageRef);
+      // Upload to Supabase Storage (public 'materials' bucket)
+      const uploaded = await uploadFile(apiFetch, { kind: 'lyrics', lyricsId: id }, file, setUploadProgress);
+      const downloadUrl = uploaded.publicUrl ?? '';
       const newFile: AttachedFile = {
         name: file.name,
         storageRef: downloadUrl,
