@@ -1,11 +1,10 @@
 /**
  * API: POST /api/riyaz/pitch-check
  *
- * AI-based pitch accuracy feedback for SRGMPDN swaras in Maya Malava Gowla Ragam.
- * Student describes what they sang/noticed; AI gives targeted feedback and tips.
- *
- * In future: accept audio file and do actual pitch analysis via Gemini.
- * For now: text-based AI coaching with pitch guidance.
+ * AI pitch coaching for the raga the student selected. The page sends the
+ * raga's swaras (with their ratios to Sa) and what the live tuner measured
+ * this session (average cents off per swara), so the feedback is about how
+ * the student actually sang, plus any observations they typed.
  */
 
 import { NextRequest } from 'next/server';
@@ -14,11 +13,33 @@ import { callGroqSimple } from '@/lib/ai/groq';
 import { z } from 'zod';
 
 const PitchCheckSchema = z.object({
-  pitch: z.string().min(1),         // e.g. "C" "D" "E" "F" etc — the Sa (tonic)
+  pitch: z.string().min(1),           // e.g. "C" "D" "E" "F" etc — the Sa (tonic)
+  saHz: z.number().positive().max(2000).optional(),
   swarasAttempted: z.string().min(1), // what they sang, e.g. "S R G M P D N S"
-  observations: z.string().optional(), // student's own observations
-  ragam: z.string().default('Maya Malava Gowla'),
+  // The selected raga's swaras with their just-intonation ratios to Sa
+  swaras: z
+    .array(z.object({ name: z.string().max(10), symbol: z.string().max(10), ratio: z.number().positive().max(4) }))
+    .max(12)
+    .optional(),
+  // What the live tuner measured this session: average signed cents per swara
+  measured: z
+    .array(z.object({ name: z.string().max(10), avgCents: z.number().min(-1200).max(1200), readings: z.number().int().min(0) }))
+    .max(12)
+    .optional(),
+  observations: z.string().max(500).optional(), // student's own observations
+  ragam: z.string().max(60).default('Maya Malava Gowla'),
 });
+
+// Interval names for describing each swara's distance from Sa
+const INTERVALS = ['unison', 'minor second', 'major second', 'minor third', 'major third', 'perfect fourth',
+  'augmented fourth', 'perfect fifth', 'minor sixth', 'major sixth', 'minor seventh', 'major seventh'];
+
+function describeSwara(name: string, ratio: number, saHz?: number): string {
+  const cents = 1200 * Math.log2(ratio);
+  const semis = Math.round(cents / 100) % 12;
+  const hz = saHz ? ` ≈ ${(saHz * ratio).toFixed(1)} Hz` : '';
+  return `- ${name}: ${INTERVALS[semis]} above Sa (ratio ${Number(ratio.toFixed(4))}, ${Math.round(cents)}¢${hz})`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,35 +51,43 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { pitch, swarasAttempted, observations, ragam } = parsed.data;
+    const { pitch, saHz, swarasAttempted, swaras, measured, observations, ragam } = parsed.data;
+
+    const swaraLines = swaras && swaras.length
+      ? swaras.map((s) => describeSwara(s.name, s.ratio, saHz)).join('\n')
+      : `- ${swarasAttempted}`;
+
+    const measuredLines = measured && measured.length
+      ? measured
+          .map((m) => {
+            const dir = Math.abs(m.avgCents) <= 10 ? 'in tune' : m.avgCents > 0 ? 'sharp (too high)' : 'flat (too low)';
+            return `- ${m.name}: average ${m.avgCents > 0 ? '+' : ''}${m.avgCents}¢ — ${dir} (${m.readings} readings)`;
+          })
+          .join('\n')
+      : null;
 
     const systemPrompt = `You are a Carnatic music teacher specialising in pitch training and voice culture.
-The student is practicing the ${ragam} ragam (Melakarta 15 — also called Kanakangi janya).
-This raga uses: S R1 G3 M1 P D1 N3 S (arohanam and avarohanam are the same).
-- Sa (Shadja) — the tonic
-- Ri1 (Shuddha Rishabha) — only a semitone (minor second, 16/15) above Sa — very close to Sa, often sung too high by beginners
-- Ga3 (Antara Gandhara) — a major third (5/4) above Sa — bright, high Ga
-- Ma1 (Shuddha Madhyama) — a perfect fourth (4/3) above Sa
-- Pa (Panchama) — a perfect fifth (3/2) above Sa
-- Dha1 (Shuddha Dhaivata) — a minor sixth (8/5) above Sa — often confused with Dha2; must stay flat
-- Ni3 (Kakali Nishada) — a major seventh (15/8) above Sa — very high, almost at upper Sa
-- SA (upper octave Sa)
+The student is practising ragam ${ragam}. Its swaras, tuned in just intonation relative to Sa:
+${swaraLines}
 
-IMPORTANT: Ri1 is NOT a major second — it is just one semitone above Sa. A very common mistake is to sing Ri1 too high (landing on Ri2 instead). Always correct students to bring Ri1 much closer to Sa.
-
-The student is singing with Sa fixed at pitch: ${pitch}
+The student's Sa is ${pitch}${saHz ? ` (${saHz.toFixed(2)} Hz)` : ''}.
+${measuredLines
+  ? `The app's live pitch tuner measured the student's singing this session (cents from the correct pitch; 100¢ = one semitone; within ±10¢ is in tune):
+${measuredLines}
+Base your feedback primarily on these measurements: name the swaras that were sharp or flat, by how much, and how to correct each. Do not invent problems with swaras that measured in tune.`
+  : 'No tuner measurements were recorded this session, so give general guidance for this raga.'}
 
 Give a response with:
-1. **Sa Pitch Reference**: The exact frequency (Hz) for their Sa note (${pitch}) and what to listen for
-2. **Swara-by-swara tips**: For each swara S R G M P D N, give 1 brief tip on common errors and how to correct
-3. **Today's Focus**: One specific thing to focus on for this practice session
-4. **Encouragement**: One sentence of motivation
+1. **Sa reference**: the Sa frequency above and what to listen for against the tanpura
+2. **Swara-by-swara**: for each swara of this raga, one brief, specific tip${measuredLines ? ' — prioritise the measured problem swaras' : ''}
+3. **Today's focus**: one concrete exercise for this practice session
+4. **Encouragement**: one sentence
 
-Keep response concise and practical. Format with clear sections. Do NOT use markdown tables.`;
+Use only the swaras listed for this raga; never describe swaras from a different raga. Keep it concise and practical, with clear sections. Do NOT use markdown tables.`;
 
     const userMessage = observations
-      ? `I practiced the swaras: ${swarasAttempted}. My observations: ${observations}. Please give me feedback.`
-      : `I practiced the swaras: ${swarasAttempted}. Please give me pitch guidance.`;
+      ? `I practised the swaras: ${swarasAttempted}. My own observations: ${observations}. Please give me feedback.`
+      : `I practised the swaras: ${swarasAttempted}. Please give me pitch feedback.`;
 
     const feedback = await callGroqSimple(systemPrompt, userMessage, {
       temperature: 0.4,
