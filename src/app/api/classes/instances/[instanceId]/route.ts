@@ -95,6 +95,15 @@ export async function PATCH(
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
     if (parsed.data.scheduledStartTime !== undefined) updates.scheduledStartTime = parsed.data.scheduledStartTime;
     if (parsed.data.scheduledEndTime !== undefined) updates.scheduledEndTime = parsed.data.scheduledEndTime;
+    if (parsed.data.scheduledStartTime !== undefined || parsed.data.scheduledEndTime !== undefined) {
+      // A class the teacher re-timed or moved to another day: the nightly
+      // generator must leave it alone and not recreate the original day
+      const prev = existing as Record<string, unknown>;
+      const oldDate = String(prev.scheduledStartTime ?? '').slice(0, 10);
+      const newDate = String(parsed.data.scheduledStartTime ?? prev.scheduledStartTime ?? '').slice(0, 10);
+      updates.manuallyEdited = true;
+      if (oldDate && newDate && oldDate !== newDate && !prev.movedFrom) updates.movedFrom = oldDate;
+    }
 
     await updateDoc(COLLECTIONS.CLASS_INSTANCES, instanceId, updates);
 

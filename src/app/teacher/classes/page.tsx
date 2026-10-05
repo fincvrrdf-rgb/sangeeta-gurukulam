@@ -52,6 +52,7 @@ interface ClassJoins {
   cancellationReason: string | null;
   meetLink: string | null;
   note: string | null;
+  movedFrom: string | null;
   teacherJoinedAt: string | null;
   enrolled: number;
   students: StudentAttendance[];
@@ -115,12 +116,15 @@ function StudentRow({
   student,
   apiFetch,
   onSaved,
+  onClassChanged,
 }: {
   cls: ClassJoins;
   student: StudentAttendance;
   apiFetch: ApiFetch;
   onSaved: (updated: StudentAttendance) => void;
+  onClassChanged: () => Promise<void>;
 }) {
+  const [editingClass, setEditingClass] = useState(false);
   const [status, setStatus] = useState(student.status ?? '');
   const [minutes, setMinutes] = useState(student.durationMinutes != null ? String(student.durationMinutes) : '');
   const [saving, setSaving] = useState(false);
@@ -179,6 +183,7 @@ function StudentRow({
   }
 
   return (
+    <>
     <tr className="align-middle">
       <td className="px-3 py-2 whitespace-nowrap">
         <p className="text-sm text-charcoal">
@@ -186,6 +191,10 @@ function StudentRow({
           {cls.kind === 'extra' && <span className="ml-1.5 badge badge-info">{cls.isGroup ? 'Group' : 'Extra'}</span>}
         </p>
         <p className="text-xs text-gray-400">{istTime(student.start ?? cls.start)} – {istTime(student.end ?? cls.end)}</p>
+        {cls.movedFrom && <p className="text-[11px] text-gray-400">moved from {formatDay(cls.movedFrom)}</p>}
+        <button onClick={() => setEditingClass((v) => !v)} className="text-[11px] text-teal-600 hover:text-teal-800">
+          {editingClass ? 'Close' : 'Edit class'}
+        </button>
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 tabular-nums">
         {cls.teacherJoinedAt ? istTime(cls.teacherJoinedAt) : <span className="text-gray-300">—</span>}
@@ -247,6 +256,106 @@ function StudentRow({
         {err && <p className="text-[11px] text-red-600 mt-0.5">{err}</p>}
       </td>
     </tr>
+    {editingClass && (
+      <tr>
+        <td colSpan={6} className="px-3 pb-3">
+          <ClassEditor
+            cls={cls}
+            student={student}
+            apiFetch={apiFetch}
+            onSaved={async () => {
+              setEditingClass(false);
+              await onClassChanged();
+            }}
+          />
+        </td>
+      </tr>
+    )}
+    </>
+  );
+}
+
+/** Change the day / time / length of a class (e.g. it was taken on a different day). */
+function ClassEditor({
+  cls,
+  student,
+  apiFetch,
+  onSaved,
+}: {
+  cls: ClassJoins;
+  student: StudentAttendance;
+  apiFetch: ApiFetch;
+  onSaved: () => Promise<void>;
+}) {
+  const startIso = student.start ?? cls.start;
+  const endIso = student.end ?? cls.end;
+  const hhmm = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+  const [date, setDate] = useState(cls.date);
+  const [start, setStart] = useState(startIso ? hhmm(startIso) : '05:00');
+  const [minutes, setMinutes] = useState(
+    String(Math.max(5, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000)) || 30),
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    try {
+      // A scheduled day with no class yet: create it first
+      let instanceId = student.recordInstanceId || cls.instanceId;
+      if (!instanceId) {
+        const er = await apiFetch('/api/classes/ensure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId: student.studentId, date: cls.date }),
+        });
+        const ej = await er.json().catch(() => ({}));
+        if (!er.ok || !ej.instanceId) throw new Error(ej.error ?? 'Could not create the class');
+        instanceId = ej.instanceId as string;
+      }
+      const [h, m] = start.split(':').map(Number);
+      const endTotal = Math.min(h * 60 + m + Math.max(5, Math.round(Number(minutes) || 30)), 23 * 60 + 59);
+      const end = `${String(Math.floor(endTotal / 60)).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+      const res = await apiFetch(`/api/classes/instances/${instanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduledStartTime: `${date}T${start}:00+05:30`,
+          scheduledEndTime: `${date}T${end}:00+05:30`,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? 'Could not update the class');
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not update the class');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-3 flex-wrap bg-gray-50 rounded-lg px-3 py-2">
+      <label className="text-xs text-gray-600">
+        Day taken
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input text-sm py-1 px-2 mt-1 block" />
+      </label>
+      <label className="text-xs text-gray-600">
+        Start
+        <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="input text-sm py-1 px-2 w-28 mt-1 block" />
+      </label>
+      <label className="text-xs text-gray-600">
+        Length (min)
+        <input type="number" min={5} max={300} value={minutes} onChange={(e) => setMinutes(e.target.value)} className="input text-sm py-1 px-2 w-20 mt-1 block" />
+      </label>
+      <button onClick={save} disabled={saving} className="btn-primary text-xs px-3 py-1.5">
+        {saving ? 'Saving…' : 'Save class'}
+      </button>
+      {cls.isGroup && <p className="text-[11px] text-gray-500 w-full">This changes the class for everyone in the group.</p>}
+      {err && <p className="text-xs text-red-600 w-full">{err}</p>}
+    </div>
   );
 }
 
@@ -288,6 +397,7 @@ function StudentTable({
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-charcoal">{sheet.name}</h3>
             <span className={`badge ${BATCH_COLORS[sheet.batch] ?? 'badge-neutral'}`}>Batch {sheet.batch}</span>
+            <a href="/admin/students" className="text-xs text-teal-600 hover:text-teal-800 font-medium">Edit / delete student</a>
           </div>
           <p className="text-xs text-gray-500">
             {sheet.schedule ? describeSchedule(sheet.schedule) : 'Batch schedule'}{' '}
@@ -341,6 +451,7 @@ function StudentTable({
                 student={student}
                 apiFetch={apiFetch}
                 onSaved={(u) => onStudentSaved(cls.key, u)}
+                onClassChanged={onScheduleSaved}
               />
             ))}
           </tbody>
