@@ -3,6 +3,8 @@
  *
  * PATCH  — Update student status (active/inactive) or batch assignment
  * DELETE — Soft-delete student (disables Firebase Auth account, marks isActive=false)
+ *
+ * Teachers and admins (the teacher edits/removes students from the Classes page).
  */
 
 import { NextRequest } from 'next/server';
@@ -30,7 +32,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuth(request, ['super_admin']);
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
     const { id } = await params;
 
     // Never allow modifying your own account or a super_admin via this route
@@ -107,7 +109,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuth(request, ['super_admin']);
+    const auth = await requireAuth(request, ['teacher', 'super_admin']);
     const { id } = await params;
 
     // Never allow deleting your own account or another super_admin
