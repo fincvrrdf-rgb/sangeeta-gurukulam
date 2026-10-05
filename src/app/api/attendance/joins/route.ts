@@ -31,6 +31,10 @@ export interface StudentInfo {
   schedule: StudentSchedule | null;
   meetLink: string | null;        // personal link (null = uses batch link)
   effectiveLink: string | null;   // what their own classes use
+  batchBandId: string;
+  phone: string;
+  guardianName: string;
+  billingRegion: string;
 }
 
 export interface StudentAttendance {
@@ -122,6 +126,10 @@ export async function GET(request: NextRequest) {
         schedule,
         meetLink: (p.meetLink as string) || null,
         effectiveLink: resolveClassLink({ studentIds: [p.id], batchBandId: p.currentBatchBandId }, linkCtx),
+        batchBandId: String(p.currentBatchBandId),
+        phone: (p.phone as string) ?? '',
+        guardianName: (p.guardianName as string) ?? '',
+        billingRegion: (p.billingRegion as string) ?? 'india',
       });
     }
 

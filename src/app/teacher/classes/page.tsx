@@ -36,6 +36,15 @@ interface StudentInfo {
   schedule: StudentSchedule | null;
   meetLink: string | null;
   effectiveLink: string | null;
+  batchBandId: string;
+  phone: string;
+  guardianName: string;
+  billingRegion: string;
+}
+
+interface BatchOption {
+  id: string;
+  code: string;
 }
 
 interface ClassJoins {
@@ -368,16 +377,19 @@ interface StudentSheet {
   schedule: StudentSchedule | null;
   meetLink: string | null;
   effectiveLink: string | null;
+  info: StudentInfo | null;
   rows: { cls: ClassJoins; student: StudentAttendance }[];
 }
 
 function StudentTable({
   sheet,
+  batches,
   apiFetch,
   onStudentSaved,
   onScheduleSaved,
 }: {
   sheet: StudentSheet;
+  batches: BatchOption[];
   apiFetch: ApiFetch;
   onStudentSaved: (classKey: string, updated: StudentAttendance) => void;
   onScheduleSaved: () => Promise<void>;
@@ -386,6 +398,7 @@ function StudentTable({
   const minutes = present.reduce((sum, r) => sum + (r.student.durationMinutes ?? r.student.scheduledMinutes ?? 0), 0);
   const untimed = present.filter((r) => r.student.durationMinutes == null && r.student.scheduledMinutes == null).length;
   const [editing, setEditing] = useState(false);
+  const [editingStudent, setEditingStudent] = useState(false);
   const unrecorded = sheet.rows.filter((r) => r.student.status === null).length;
   const held = sheet.rows.filter((r) => r.student.status !== 'teacher_cancelled').length;
   const cancelledCount = sheet.rows.length - held;
@@ -397,7 +410,11 @@ function StudentTable({
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-charcoal">{sheet.name}</h3>
             <span className={`badge ${BATCH_COLORS[sheet.batch] ?? 'badge-neutral'}`}>Batch {sheet.batch}</span>
-            <a href="/admin/students" className="text-xs text-teal-600 hover:text-teal-800 font-medium">Edit / delete student</a>
+            {sheet.info && (
+              <button onClick={() => setEditingStudent((v) => !v)} className="text-xs text-teal-600 hover:text-teal-800 font-medium">
+                {editingStudent ? 'Close' : 'Edit / delete student'}
+              </button>
+            )}
           </div>
           <p className="text-xs text-gray-500">
             {sheet.schedule ? describeSchedule(sheet.schedule) : 'Batch schedule'}{' '}
@@ -417,6 +434,17 @@ function StudentTable({
           {cancelledCount > 0 && <span className="block text-[11px] text-gray-400 text-right">{cancelledCount} cancelled</span>}
         </p>
       </div>
+      {editingStudent && sheet.info && (
+        <StudentEditor
+          info={sheet.info}
+          batches={batches}
+          apiFetch={apiFetch}
+          onDone={async () => {
+            setEditingStudent(false);
+            await onScheduleSaved();
+          }}
+        />
+      )}
       {editing && (
         <ScheduleEditor
           studentId={sheet.studentId}
@@ -458,6 +486,113 @@ function StudentTable({
         </table>
       </div>
       )}
+    </div>
+  );
+}
+
+function StudentEditor({
+  info,
+  batches,
+  apiFetch,
+  onDone,
+}: {
+  info: StudentInfo;
+  batches: BatchOption[];
+  apiFetch: ApiFetch;
+  onDone: () => Promise<void>;
+}) {
+  const [name, setName] = useState(info.name);
+  const [phone, setPhone] = useState(info.phone);
+  const [guardian, setGuardian] = useState(info.guardianName);
+  const [region, setRegion] = useState(info.billingRegion === 'abroad' ? 'abroad' : 'india');
+  const [batchId, setBatchId] = useState(info.batchBandId);
+  const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    if (!name.trim()) { setErr('Name is required'); return; }
+    setBusy('save');
+    setErr(null);
+    try {
+      const res = await apiFetch(`/api/admin/students/${info.studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: name.trim(),
+          phone: phone.trim(),
+          guardianName: guardian.trim(),
+          billingRegion: region,
+          ...(batchId && batchId !== info.batchBandId ? { currentBatchBandId: batchId } : {}),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? 'Could not save');
+      await onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Delete ${info.name}? They will no longer be able to log in and their classes stop. Past attendance is kept.`)) return;
+    setBusy('delete');
+    setErr(null);
+    try {
+      const res = await apiFetch(`/api/admin/students/${info.studentId}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? 'Could not delete');
+      await onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not delete');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 space-y-3">
+      <div className="flex items-end gap-3 flex-wrap">
+        <label className="text-xs text-gray-600">
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-48" />
+        </label>
+        <label className="text-xs text-gray-600">
+          Phone
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-40" />
+        </label>
+        <label className="text-xs text-gray-600">
+          Guardian
+          <input value={guardian} onChange={(e) => setGuardian(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-40" />
+        </label>
+        <label className="text-xs text-gray-600">
+          Billing
+          <select value={region} onChange={(e) => setRegion(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-28">
+            <option value="india">India</option>
+            <option value="abroad">Abroad</option>
+          </select>
+        </label>
+        {batches.length > 0 && (
+          <label className="text-xs text-gray-600">
+            Batch
+            <select value={batchId} onChange={(e) => setBatchId(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-24">
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>{b.code}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={busy !== null} className="btn-primary text-xs px-3 py-1.5">
+          {busy === 'save' ? 'Saving…' : 'Save details'}
+        </button>
+        <button onClick={remove} disabled={busy !== null} className="text-xs text-red-600 hover:text-red-800 font-medium">
+          {busy === 'delete' ? 'Deleting…' : 'Delete student'}
+        </button>
+      </div>
+      {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
 }
@@ -903,6 +1038,7 @@ export default function ClassesPage() {
   const { user, apiFetch } = useAuthContext();
   const [classes, setClasses] = useState<ClassJoins[]>([]);
   const [studentList, setStudentList] = useState<StudentInfo[]>([]);
+  const [batches, setBatches] = useState<BatchOption[]>([]);
   const [hasSlots, setHasSlots] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -916,8 +1052,15 @@ export default function ClassesPage() {
     return Promise.all([
       apiFetch(`/api/attendance/joins?days=${period}&ahead=7`).then((r) => r.json()),
       apiFetch('/api/classes/slots').then((r) => r.json()).catch(() => ({ slots: [] })),
+      apiFetch('/api/admin/batches').then((r) => r.json()).catch(() => ({ batches: [] })),
     ])
-      .then(([joinData, slotData]) => {
+      .then(([joinData, slotData, batchData]) => {
+        setBatches(
+          ((batchData.batches ?? []) as Record<string, unknown>[])
+            .filter((b) => b.isActive !== false)
+            .map((b) => ({ id: String(b.id), code: String(b.code ?? '') }))
+            .sort((a, b) => a.code.localeCompare(b.code)),
+        );
         if (joinData.error) throw new Error(joinData.error);
         if (joinData.today) setToday(joinData.today);
         setClasses(joinData.classes ?? []);
@@ -1008,6 +1151,7 @@ export default function ClassesPage() {
       schedule: st.schedule,
       meetLink: st.meetLink,
       effectiveLink: st.effectiveLink,
+      info: st,
       rows: [],
     });
   }
@@ -1022,6 +1166,7 @@ export default function ClassesPage() {
         schedule: null,
         meetLink: null,
         effectiveLink: null,
+        info: null,
         rows: [],
       };
       sheet.rows.push({ cls: c, student: st });
@@ -1137,6 +1282,7 @@ export default function ClassesPage() {
             <StudentTable
               key={sheet.studentId}
               sheet={sheet}
+              batches={batches}
               apiFetch={apiFetch}
               onStudentSaved={handleStudentSaved}
               onScheduleSaved={() => load(days)}
