@@ -2,15 +2,14 @@
  * Classes — /teacher/classes
  *
  * Top: each batch's ONE stable Meet link (copy / join).
- * Below: who joined each class, taken from students clicking their batch's
- * Join link (/api/attendance/joins). No per-date class list — classes are
- * generated in the background from the weekly schedule.
+ * Below: attendance per class (/api/attendance/joins), filled in when a
+ * student clicks their batch's Join link and editable inline — status and
+ * minutes taught per student — plus per-student totals for the period.
  */
 
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 
 interface BatchLinkRow {
@@ -19,13 +18,16 @@ interface BatchLinkRow {
   meetLink: string | null;
 }
 
-interface JoinEntry {
+interface StudentAttendance {
   studentId: string;
   name: string;
-  status: string;
+  status: string | null;
   joinedAt: string | null;
   lateByMinutes: number;
+  durationMinutes: number | null;
   viaLink: boolean;
+  notes: string;
+  recordInstanceId: string;
 }
 
 interface ClassJoins {
@@ -37,8 +39,7 @@ interface ClassJoins {
   end: string;
   cancelled: boolean;
   enrolled: number;
-  joined: JoinEntry[];
-  notJoined: { studentId: string; name: string }[];
+  students: StudentAttendance[];
 }
 
 const BATCH_COLORS: Record<string, string> = {
@@ -70,11 +71,178 @@ function formatDay(date: string): string {
   return new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
 }
 
-function JoinBadge({ entry }: { entry: JoinEntry }) {
-  if (entry.status === 'attended') return <span className="badge badge-success">On time</span>;
-  if (entry.status === 'late') return <span className="badge badge-warning">{entry.lateByMinutes} min late</span>;
-  if (entry.status === 'absent') return <span className="badge badge-error">{entry.lateByMinutes} min late · absent</span>;
-  return <span className="badge badge-neutral">{entry.status}</span>;
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'attended', label: 'Attended' },
+  { value: 'late', label: 'Late' },
+  { value: 'absent', label: 'Absent' },
+  { value: 'notified_absence', label: 'Excused' },
+];
+
+const PRESENT = new Set(['attended', 'late']);
+
+function classLengthMinutes(c: ClassJoins): number {
+  const ms = new Date(c.end).getTime() - new Date(c.start).getTime();
+  return ms > 0 ? Math.round(ms / 60000) : 60;
+}
+
+type ApiFetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+function StudentRow({
+  cls,
+  student,
+  apiFetch,
+  onSaved,
+}: {
+  cls: ClassJoins;
+  student: StudentAttendance;
+  apiFetch: ApiFetch;
+  onSaved: (updated: StudentAttendance) => void;
+}) {
+  const [status, setStatus] = useState(student.status ?? '');
+  const [minutes, setMinutes] = useState(student.durationMinutes != null ? String(student.durationMinutes) : '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const dirty =
+    status !== (student.status ?? '') ||
+    minutes !== (student.durationMinutes != null ? String(student.durationMinutes) : '');
+
+  async function save() {
+    // Entering minutes without a status means they attended
+    const finalStatus = status || (minutes ? 'attended' : '');
+    if (!finalStatus) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await apiFetch('/api/attendance/mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: student.studentId,
+          classInstanceId: student.recordInstanceId,
+          status: finalStatus,
+          lateByMinutes: finalStatus === 'late' ? student.lateByMinutes : 0,
+          durationMinutes: minutes === '' ? null : Math.max(0, Math.round(Number(minutes))),
+          notes: student.notes,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? 'Could not save');
+      setStatus(finalStatus);
+      onSaved({
+        ...student,
+        status: finalStatus,
+        durationMinutes: minutes === '' ? null : Math.max(0, Math.round(Number(minutes))),
+        viaLink: false,
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const info = student.status === null
+    ? 'Not recorded'
+    : student.joinedAt
+      ? `Clicked Join at ${istTime(student.joinedAt)}${student.viaLink ? '' : ' · edited by you'}`
+      : 'Marked by you';
+
+  return (
+    <li className="px-3 py-2 space-y-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="min-w-0 flex-1 basis-40">
+          <p className="text-sm text-charcoal truncate">{student.name}</p>
+          <p className={`text-xs ${student.status === null ? 'text-orange-600' : 'text-gray-400'}`}>{info}</p>
+        </div>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="input text-xs py-1 px-2 w-28"
+          aria-label={`Attendance for ${student.name}`}
+        >
+          <option value="">—</option>
+          {status && !STATUS_OPTIONS.some((o) => o.value === status) && (
+            <option value={status}>{status.replace(/_/g, ' ')}</option>
+          )}
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={0}
+            max={600}
+            inputMode="numeric"
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            placeholder={String(classLengthMinutes(cls))}
+            className="input text-xs py-1 px-2 w-16"
+            aria-label={`Minutes taught to ${student.name}`}
+          />
+          <span className="text-xs text-gray-400">min</span>
+        </div>
+        <button
+          onClick={save}
+          disabled={!dirty || saving || (!status && !minutes)}
+          className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-teal-400 text-teal-700 hover:bg-teal-50 disabled:opacity-30 disabled:cursor-default"
+        >
+          {saving ? '…' : 'Save'}
+        </button>
+      </div>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </li>
+  );
+}
+
+function ClassCard({
+  cls,
+  apiFetch,
+  onStudentSaved,
+}: {
+  cls: ClassJoins;
+  apiFetch: ApiFetch;
+  onStudentSaved: (classKey: string, updated: StudentAttendance) => void;
+}) {
+  const present = cls.students.filter((s) => s.status && PRESENT.has(s.status)).length;
+  const unrecorded = cls.students.filter((s) => s.status === null).length;
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`badge ${BATCH_COLORS[cls.batch] ?? 'badge-neutral'}`}>Batch {cls.batch}</span>
+          <span className="text-sm font-semibold text-charcoal">{formatDay(cls.date)}</span>
+          <span className="text-sm text-gray-500">{istTime(cls.start)} – {istTime(cls.end)}</span>
+          {cls.cancelled && <span className="badge badge-error">Cancelled</span>}
+        </div>
+        {!cls.cancelled && (
+          <span className="text-sm font-semibold text-charcoal">
+            {present}
+            <span className="text-gray-400 font-normal"> / {cls.students.length} present</span>
+            {unrecorded > 0 && <span className="text-xs text-orange-600 font-normal"> · {unrecorded} not recorded</span>}
+          </span>
+        )}
+      </div>
+
+      {!cls.cancelled && cls.students.length > 0 && (
+        <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+          {cls.students.map((s) => (
+            <StudentRow
+              key={`${s.studentId}|${s.status}|${s.durationMinutes}`}
+              cls={cls}
+              student={s}
+              apiFetch={apiFetch}
+              onSaved={(u) => onStudentSaved(cls.key, u)}
+            />
+          ))}
+        </ul>
+      )}
+      {!cls.cancelled && cls.students.length === 0 && (
+        <p className="text-xs text-gray-400">No students enrolled in this batch.</p>
+      )}
+    </div>
+  );
 }
 
 export default function ClassesPage() {
@@ -87,11 +255,12 @@ export default function ClassesPage() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [settingUp, setSettingUp] = useState(false);
   const [batchFilter, setBatchFilter] = useState<string>('all');
+  const [days, setDays] = useState(14);
 
-  function load() {
+  function load(period = days) {
     return Promise.all([
       apiFetch('/api/admin/batches').then((r) => r.json()).catch(() => ({ batches: [] })),
-      apiFetch('/api/attendance/joins?days=14').then((r) => r.json()),
+      apiFetch(`/api/attendance/joins?days=${period}`).then((r) => r.json()),
       apiFetch('/api/classes/slots').then((r) => r.json()).catch(() => ({ slots: [] })),
     ])
       .then(([batchData, joinData, slotData]) => {
@@ -111,8 +280,20 @@ export default function ClassesPage() {
   }
 
   useEffect(() => {
-    if (user) load();
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!user) return;
+    setLoading(true);
+    load(days);
+  }, [user, days]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleStudentSaved(classKey: string, updated: StudentAttendance) {
+    setClasses((prev) =>
+      prev.map((c) =>
+        c.key !== classKey
+          ? c
+          : { ...c, students: c.students.map((s) => (s.studentId === updated.studentId ? updated : s)) },
+      ),
+    );
+  }
 
   async function copyLink(code: string, link: string) {
     try {
@@ -156,6 +337,23 @@ export default function ClassesPage() {
 
   const visible = classes.filter((c) => batchFilter === 'all' || c.batch === batchFilter);
   const batchesWithClasses = [...new Set(classes.map((c) => c.batch))].sort();
+
+  // Per-student totals for the selected period and batch
+  const totals = new Map<string, { name: string; batch: string; present: number; minutes: number; untimed: number }>();
+  for (const c of visible) {
+    if (c.cancelled) continue;
+    for (const s of c.students) {
+      const t = totals.get(s.studentId) ?? { name: s.name, batch: c.batch, present: 0, minutes: 0, untimed: 0 };
+      if (s.status && PRESENT.has(s.status)) {
+        t.present++;
+        if (s.durationMinutes != null) t.minutes += s.durationMinutes;
+        else t.untimed++;
+      }
+      totals.set(s.studentId, t);
+    }
+  }
+  const totalRows = [...totals.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const fmtMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60 ? `${m % 60}m` : ''}`.trim() : `${m}m`);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
@@ -218,16 +416,28 @@ export default function ClassesPage() {
         </div>
       )}
 
-      {/* Who joined — from Join link clicks */}
+      {/* Attendance — from Join clicks, editable */}
       <div className="space-y-3">
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="font-heading text-lg font-semibold text-charcoal">Who joined</h2>
-            <p className="text-xs text-gray-500">Recorded when a student clicks their batch&apos;s Join link · last 14 days</p>
+            <h2 className="font-heading text-lg font-semibold text-charcoal">Attendance</h2>
+            <p className="text-xs text-gray-500">
+              Filled in automatically when a student clicks Join. Change anything and press Save; add minutes to record how long you taught each student.
+            </p>
           </div>
-          {batchesWithClasses.length > 1 && (
-            <div className="flex gap-1.5">
-              {['all', ...batchesWithClasses].map((b) => (
+          <div className="flex gap-1.5 flex-wrap">
+            <select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="input text-xs py-1 px-2 w-auto"
+              aria-label="Period"
+            >
+              <option value={14}>Last 14 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={90}>Last 90 days</option>
+            </select>
+            {batchesWithClasses.length > 1 &&
+              ['all', ...batchesWithClasses].map((b) => (
                 <button
                   key={b}
                   onClick={() => setBatchFilter(b)}
@@ -238,9 +448,41 @@ export default function ClassesPage() {
                   {b === 'all' ? 'All' : b}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
         </div>
+
+        {/* Per-student totals */}
+        {!loading && totalRows.length > 0 && (
+          <div className="card p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 text-left border-b border-gray-100">
+                  <th className="px-3 py-2 font-medium">Student</th>
+                  <th className="px-3 py-2 font-medium">Batch</th>
+                  <th className="px-3 py-2 font-medium text-right">Classes</th>
+                  <th className="px-3 py-2 font-medium text-right">Time taught</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {totalRows.map(([id, t]) => (
+                  <tr key={id}>
+                    <td className="px-3 py-2 text-charcoal">{t.name}</td>
+                    <td className="px-3 py-2 text-gray-500">{t.batch}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.present}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {fmtMinutes(t.minutes)}
+                      {t.untimed > 0 && (
+                        <span className="block text-[11px] text-gray-400">
+                          {t.untimed} class{t.untimed !== 1 ? 'es' : ''} without minutes
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {loading &&
           Array.from({ length: 3 }).map((_, i) => (
@@ -251,59 +493,12 @@ export default function ClassesPage() {
           ))}
 
         {!loading && visible.length === 0 && (
-          <div className="card text-center py-10 text-sm text-gray-500">No classes in the last 14 days.</div>
+          <div className="card text-center py-10 text-sm text-gray-500">No classes in this period.</div>
         )}
 
         {!loading &&
           visible.map((c) => (
-            <div key={c.key} className="card space-y-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`badge ${BATCH_COLORS[c.batch] ?? 'badge-neutral'}`}>Batch {c.batch}</span>
-                  <span className="text-sm font-semibold text-charcoal">{formatDay(c.date)}</span>
-                  <span className="text-sm text-gray-500">{istTime(c.start)} – {istTime(c.end)}</span>
-                  {c.cancelled && <span className="badge badge-error">Cancelled</span>}
-                </div>
-                {!c.cancelled && (
-                  <span className="text-sm font-semibold text-charcoal">
-                    {c.joined.filter((j) => j.status !== 'absent').length}
-                    <span className="text-gray-400 font-normal"> / {c.enrolled} joined</span>
-                  </span>
-                )}
-              </div>
-
-              {!c.cancelled && c.joined.length > 0 && (
-                <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
-                  {c.joined.map((j) => (
-                    <li key={j.studentId} className="flex items-center justify-between gap-3 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-sm text-charcoal truncate">{j.name}</p>
-                        <p className="text-xs text-gray-400">
-                          {j.viaLink ? `Clicked Join at ${istTime(j.joinedAt ?? '')}` : 'Marked by teacher'}
-                        </p>
-                      </div>
-                      <JoinBadge entry={j} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {!c.cancelled && c.notJoined.length > 0 && (
-                <p className="text-xs text-gray-500">
-                  <span className="font-medium text-gray-600">Didn&apos;t join:</span>{' '}
-                  {c.notJoined.map((s) => s.name).join(', ')}
-                </p>
-              )}
-
-              {!c.cancelled && (
-                <Link
-                  href={`/teacher/classes/${c.instanceId}/attendance`}
-                  className="inline-block text-xs text-teal-600 hover:text-teal-800 font-medium"
-                >
-                  Adjust attendance manually →
-                </Link>
-              )}
-            </div>
+            <ClassCard key={c.key} cls={c} apiFetch={apiFetch} onStudentSaved={handleStudentSaved} />
           ))}
       </div>
     </div>

@@ -74,6 +74,8 @@ const SingleAttendanceSchema = z.object({
     'notified_absence', 'teacher_cancelled', 'rescheduled', 'long_approved_absence',
   ]),
   lateByMinutes: z.number().min(0).default(0),
+  // How long the teacher spent with this student in this class (optional)
+  durationMinutes: z.number().int().min(0).max(600).nullable().optional(),
   notes: z.string().default(''),
   bookingId: z.string().optional(),
 });
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     // Normalize: both single and batch shapes are processed the same way
     type ParsedData = typeof parsed.data;
-    type BatchData = { records: Array<{ studentId: string; classInstanceId: string; status: string; lateByMinutes: number; notes: string; bookingId?: string }> };
+    type BatchData = { records: Array<{ studentId: string; classInstanceId: string; status: string; lateByMinutes: number; durationMinutes?: number | null; notes: string; bookingId?: string }> };
     const isBatch = 'records' in parsed.data;
     const records = isBatch
       ? (parsed.data as unknown as BatchData).records
@@ -133,7 +135,8 @@ export async function POST(request: NextRequest) {
     }
 
     for (const record of records) {
-      const { studentId, lateByMinutes, notes, bookingId } = record;
+      const { studentId, lateByMinutes, notes, bookingId, durationMinutes } = record;
+      const durationField = durationMinutes !== undefined ? { durationMinutes } : {};
       // Map UI-friendly aliases to canonical enum values
       const status = (STATUS_ALIASES[record.status] ?? record.status) as AttendanceStatus;
 
@@ -175,7 +178,14 @@ export async function POST(request: NextRequest) {
       let attendanceId: string;
       if (existing.length > 0) {
         attendanceId = existing[0].id as string;
+        // Keep the Join-click time when the teacher edits an automatic record
+        const prevMarkedBy = String(existing[0].markedBy ?? '');
+        const joinedAtField =
+          prevMarkedBy.startsWith('auto_') && !existing[0].joinedAt
+            ? { joinedAt: existing[0].markedAt ?? null }
+            : {};
         await updateDoc(COLLECTIONS.ATTENDANCE_RECORDS, attendanceId, {
+          ...joinedAtField,
           status,
           markedBy: auth.uid,
           lateByMinutes,
@@ -183,6 +193,7 @@ export async function POST(request: NextRequest) {
           violationReason: violation.reason,
           countedInConsecutiveViolations: violation.countInConsecutive,
           notes,
+          ...durationField,
           updatedAt: nowISO(),
         });
       } else {
@@ -198,6 +209,7 @@ export async function POST(request: NextRequest) {
           violationReason: violation.reason,
           countedInConsecutiveViolations: violation.countInConsecutive,
           notes,
+          ...durationField,
           ...(bookingId ? { bookingId } : {}),
         });
       }

@@ -1,10 +1,10 @@
 /**
  * API: GET /api/attendance/joins?days=14
  *
- * Attendance as recorded by students clicking their batch's Join link
- * (POST /api/attendance/auto). Returns one entry per batch per class day —
- * duplicate class instances for the same batch + date are merged — with the
- * students who joined (join time, on time / late) and those who didn't.
+ * Attendance per batch per class day (duplicate class copies merged), for
+ * every enrolled student: the automatic record from clicking the Join link
+ * (POST /api/attendance/auto), or the teacher's manual entry — which wins —
+ * including how many minutes the teacher spent with that student.
  * Teacher / admin only.
  */
 
@@ -18,26 +18,28 @@ export const dynamic = 'force-dynamic';
 
 type Doc = Record<string, unknown> & { id: string };
 
-export interface JoinEntry {
+export interface StudentAttendance {
   studentId: string;
   name: string;
-  status: string;           // attended | late | absent | …
-  joinedAt: string | null;  // when the Join link was clicked
+  status: string | null;          // null = nothing recorded yet
+  joinedAt: string | null;        // when the Join link was clicked
   lateByMinutes: number;
-  viaLink: boolean;         // false = marked manually by teacher
+  durationMinutes: number | null; // time the teacher spent with this student
+  viaLink: boolean;               // recorded by the Join click (not edited by teacher)
+  notes: string;
+  recordInstanceId: string;       // class copy the record lives on (edit target)
 }
 
 export interface ClassJoins {
   key: string;              // "A|2026-09-28"
-  instanceId: string;       // the class copy to open for manual edits
+  instanceId: string;       // class copy to attach new manual records to
   batch: string;
   date: string;             // YYYY-MM-DD (IST)
   start: string;            // ISO
   end: string;
   cancelled: boolean;
   enrolled: number;
-  joined: JoinEntry[];
-  notJoined: { studentId: string; name: string }[];
+  students: StudentAttendance[];
 }
 
 function istDate(offsetDays: number): string {
@@ -46,13 +48,14 @@ function istDate(offsetDays: number): string {
   }).format(new Date(Date.now() + offsetDays * 86_400_000));
 }
 
-const STATUS_RANK: Record<string, number> = { attended: 3, late: 2, excused: 1, absent: 0 };
+const STATUS_RANK: Record<string, number> = { attended: 3, late: 2, notified_absence: 1, absent: 0, no_show: 0 };
+const isAuto = (r: Doc) => String(r.markedBy ?? '').startsWith('auto_');
 
 export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['teacher', 'super_admin']);
 
-    const days = Math.min(Math.max(Number(new URL(request.url).searchParams.get('days')) || 14, 1), 60);
+    const days = Math.min(Math.max(Number(new URL(request.url).searchParams.get('days')) || 14, 1), 120);
     const from = istDate(-days);
     const today = istDate(0);
 
@@ -107,32 +110,43 @@ export async function GET(request: NextRequest) {
         String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')),
       )[0];
 
-      // Best record per student across all copies of this class
+      // One record per student across all copies of this class. A teacher's
+      // manual entry always wins over the automatic Join-click record.
       const best = new Map<string, Doc>();
       for (const inst of group) {
         for (const r of recordsByInstance.get(inst.id) ?? []) {
+          if (r.isDependentRecord) continue;
           const sid = String(r.studentId);
           const prev = best.get(sid);
-          if (!prev || (STATUS_RANK[String(r.status)] ?? 0) > (STATUS_RANK[String(prev.status)] ?? 0)) {
-            best.set(sid, r);
-          }
+          const better =
+            !prev ||
+            (isAuto(prev) && !isAuto(r)) ||
+            (isAuto(prev) === isAuto(r) &&
+              (STATUS_RANK[String(r.status)] ?? 0) > (STATUS_RANK[String(prev.status)] ?? 0));
+          if (better) best.set(sid, r);
         }
       }
 
-      const joined: JoinEntry[] = [...best.values()]
-        .filter((r) => r.status !== 'absent' || r.markedBy === 'auto_meet_join')
-        .map((r) => ({
-          studentId: String(r.studentId),
-          name: nameById.get(String(r.studentId)) ?? (r.dependentName as string) ?? 'Student',
-          status: String(r.status),
-          joinedAt: (r.markedAt as string) ?? null,
-          lateByMinutes: Number(r.lateByMinutes) || 0,
-          viaLink: r.markedBy === 'auto_meet_join',
-        }))
-        .sort((a, b) => String(a.joinedAt ?? '').localeCompare(String(b.joinedAt ?? '')));
-
-      const joinedIds = new Set(joined.map((j) => j.studentId));
       const enrolled = studentsByBatch.get(batch) ?? [];
+      const roster = new Map(enrolled.map((s) => [s.studentId, s.name]));
+      for (const sid of best.keys()) if (!roster.has(sid)) roster.set(sid, nameById.get(sid) ?? 'Student');
+
+      const students: StudentAttendance[] = [...roster.entries()]
+        .map(([studentId, name]) => {
+          const r = best.get(studentId);
+          return {
+            studentId,
+            name,
+            status: r ? String(r.status) : null,
+            joinedAt: r && isAuto(r) ? ((r.markedAt as string) ?? null) : ((r?.joinedAt as string) ?? null),
+            lateByMinutes: Number(r?.lateByMinutes) || 0,
+            durationMinutes: typeof r?.durationMinutes === 'number' ? (r.durationMinutes as number) : null,
+            viaLink: !!r && isAuto(r),
+            notes: (r?.notes as string) ?? '',
+            recordInstanceId: r ? String(r.classInstanceId) : main.id,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
 
       classes.push({
         key,
@@ -143,8 +157,7 @@ export async function GET(request: NextRequest) {
         end: String(main.scheduledEndTime ?? ''),
         cancelled: live.length === 0,
         enrolled: enrolled.length,
-        joined,
-        notJoined: enrolled.filter((s) => !joinedIds.has(s.studentId)),
+        students,
       });
     }
 
