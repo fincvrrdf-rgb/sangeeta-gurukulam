@@ -91,6 +91,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'late', label: 'Late' },
   { value: 'absent', label: 'Absent' },
   { value: 'notified_absence', label: 'Excused' },
+  { value: 'teacher_cancelled', label: 'Cancelled' },
 ];
 
 const PRESENT = new Set(['attended', 'late']);
@@ -277,6 +278,8 @@ function StudentTable({
   const untimed = present.filter((r) => r.student.durationMinutes == null && r.student.scheduledMinutes == null).length;
   const [editing, setEditing] = useState(false);
   const unrecorded = sheet.rows.filter((r) => r.student.status === null).length;
+  const held = sheet.rows.filter((r) => r.student.status !== 'teacher_cancelled').length;
+  const cancelledCount = sheet.rows.length - held;
 
   return (
     <div className="card p-0 overflow-hidden">
@@ -296,11 +299,12 @@ function StudentTable({
         </div>
         <p className="text-sm text-charcoal">
           <span className="font-semibold">{present.length}</span>
-          <span className="text-gray-400"> / {sheet.rows.length} classes · </span>
+          <span className="text-gray-400"> / {held} classes · </span>
           <span className="font-semibold">{fmtMinutes(minutes)}</span>
           <span className="text-gray-400"> taught</span>
           {untimed > 0 && <span className="block text-[11px] text-gray-400 text-right">{untimed} without minutes</span>}
           {unrecorded > 0 && <span className="block text-[11px] text-orange-600 text-right">{unrecorded} not recorded</span>}
+          {cancelledCount > 0 && <span className="block text-[11px] text-gray-400 text-right">{cancelledCount} cancelled</span>}
         </p>
       </div>
       {editing && (
@@ -897,7 +901,8 @@ export default function ClassesPage() {
     });
   }
   for (const c of visible) {
-    if (c.cancelled || c.upcoming) continue;
+    // Cancelled classes stay (shown as Cancelled); ones replaced by a group/extra class don't
+    if (c.upcoming || c.cancellationReason === 'replaced_by_group_or_extra') continue;
     for (const st of c.students) {
       const sheet = sheetMap.get(st.studentId) ?? {
         studentId: st.studentId,

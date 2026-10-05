@@ -194,7 +194,14 @@ export async function GET(request: NextRequest) {
         });
       }
       const roster = new Set(rosterIds);
-      for (const sid of best.keys()) roster.add(sid);
+      // Someone with a record on a shared batch class is shown too — except a
+      // student with their own schedule on a day that isn't one of their days
+      const classDow = new Date(`${date}T00:00:00Z`).getUTCDay();
+      for (const sid of best.keys()) {
+        const sched = scheduleById.get(sid);
+        if (!participants.length && sched && !sched.days.includes(classDow)) continue;
+        roster.add(sid);
+      }
 
       const classMinutes = minutesBetween(start, end);
       // On a shared batch class, a scheduled student's row shows their own time
@@ -211,7 +218,8 @@ export async function GET(request: NextRequest) {
           return {
             studentId,
             name: nameById.get(studentId) ?? 'Student',
-            status: r ? String(r.status) : null,
+            // A class the teacher cancelled reads as cancelled unless marked otherwise
+            status: r ? String(r.status) : live.length === 0 ? 'teacher_cancelled' : null,
             joinedAt: r && isAuto(r) ? ((r.markedAt as string) ?? null) : ((r?.joinedAt as string) ?? null),
             lateByMinutes: Number(r?.lateByMinutes) || 0,
             durationMinutes: typeof r?.durationMinutes === 'number' ? (r.durationMinutes as number) : null,
