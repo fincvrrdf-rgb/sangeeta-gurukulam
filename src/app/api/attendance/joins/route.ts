@@ -62,6 +62,7 @@ export interface ClassJoins {
   cancellationReason: string | null;
   meetLink: string | null;
   note: string | null;
+  movedFrom: string | null;        // original date if the teacher moved this class
   teacherJoinedAt: string | null;
   enrolled: number;
   students: StudentAttendance[];
@@ -186,7 +187,8 @@ export async function GET(request: NextRequest) {
       if (participants.length) {
         rosterIds = participants;
       } else {
-        const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+        // A moved class counts for the day it was originally scheduled on
+        const dow = new Date(`${(main.movedFrom as string) || date}T00:00:00Z`).getUTCDay();
         rosterIds = (studentsByBatch.get(batch) ?? []).filter((sid) => {
           if (ownClassOn.has(`${sid}|${date}`)) return false;
           const sched = scheduleById.get(sid);
@@ -196,7 +198,7 @@ export async function GET(request: NextRequest) {
       const roster = new Set(rosterIds);
       // Someone with a record on a shared batch class is shown too — except a
       // student with their own schedule on a day that isn't one of their days
-      const classDow = new Date(`${date}T00:00:00Z`).getUTCDay();
+      const classDow = new Date(`${(main.movedFrom as string) || date}T00:00:00Z`).getUTCDay();
       for (const sid of best.keys()) {
         const sched = scheduleById.get(sid);
         if (!participants.length && sched && !sched.days.includes(classDow)) continue;
@@ -246,6 +248,7 @@ export async function GET(request: NextRequest) {
         cancellationReason: live.length === 0 ? ((main.cancellationReason as string) ?? null) : null,
         meetLink: resolveClassLink(main, linkCtx),
         note: (main.note as string) ?? null,
+        movedFrom: (main.movedFrom as string) ?? null,
         teacherJoinedAt:
           group.map((i) => i.teacherJoinedAt as string | undefined).filter(Boolean).sort()[0] ?? null,
         enrolled: rosterIds.length,
@@ -258,6 +261,11 @@ export async function GET(request: NextRequest) {
     // (POST /api/classes/ensure).
     const covered = new Set<string>();
     for (const c of classes) for (const st of c.students) covered.add(`${st.studentId}|${c.date}`);
+    // A class moved to another day covers its original day too
+    for (const inst of instances) {
+      if (!inst.movedFrom) continue;
+      for (const sid of classStudentIds(inst)) covered.add(`${sid}|${inst.movedFrom}`);
+    }
     for (const info of studentInfo) {
       const sched = info.schedule;
       if (!sched) continue;
@@ -284,6 +292,7 @@ export async function GET(request: NextRequest) {
           cancellationReason: null,
           meetLink: info.effectiveLink,
           note: null,
+          movedFrom: null,
           teacherJoinedAt: null,
           enrolled: 1,
           students: [{
