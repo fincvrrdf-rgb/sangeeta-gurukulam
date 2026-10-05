@@ -23,6 +23,7 @@ import type { ClassInstance, AppSettings, LongAbsenceRecord, AbsenceRecord, Atte
 import type { AttendanceStatus } from '@/domain/enums';
 import { z } from 'zod';
 import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
+import { parseSchedule } from '@/lib/classes/student-schedule';
 
 function istToday(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -36,9 +37,12 @@ async function findTodaysClass(studentId: string): Promise<{ id: string; copyIds
   const bandId = profile?.currentBatchBandId as string | undefined;
   if (!bandId) return null;
 
+  const today = istToday();
+  const mySchedule = parseSchedule(profile?.classSchedule);
+  if (mySchedule && !mySchedule.days.includes(new Date(`${today}T00:00:00Z`).getUTCDay())) return null;
+
   const bandCodes = await loadBandCodes();
   const myBatch = batchKey(bandCodes, bandId);
-  const today = istToday();
   const todays = (await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
     { type: 'where', field: 'scheduledStartTime', op: '>=', value: `${today}T00:00:00+05:30` },
     { type: 'where', field: 'scheduledStartTime', op: '<=', value: `${today}T23:59:59+05:30` },

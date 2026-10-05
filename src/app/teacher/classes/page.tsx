@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { DAY_LABELS, describeSchedule, type StudentSchedule } from '@/lib/classes/student-schedule';
 
 interface BatchLinkRow {
   id: string;
@@ -25,9 +26,17 @@ interface StudentAttendance {
   joinedAt: string | null;
   lateByMinutes: number;
   durationMinutes: number | null;
+  scheduledMinutes: number | null;
   viaLink: boolean;
   notes: string;
   recordInstanceId: string;
+}
+
+interface StudentInfo {
+  studentId: string;
+  name: string;
+  batch: string;
+  schedule: StudentSchedule | null;
 }
 
 interface ClassJoins {
@@ -198,7 +207,7 @@ function StudentRow({
             inputMode="numeric"
             value={minutes}
             onChange={(e) => setMinutes(e.target.value)}
-            placeholder={String(classLengthMinutes(cls))}
+            placeholder={String(student.scheduledMinutes ?? classLengthMinutes(cls))}
             className="input text-xs py-1 px-2 w-16"
             aria-label={`Minutes taught to ${student.name}`}
           />
@@ -225,6 +234,7 @@ interface StudentSheet {
   studentId: string;
   name: string;
   batch: string;
+  schedule: StudentSchedule | null;
   rows: { cls: ClassJoins; student: StudentAttendance }[];
 }
 
@@ -232,22 +242,33 @@ function StudentTable({
   sheet,
   apiFetch,
   onStudentSaved,
+  onScheduleSaved,
 }: {
   sheet: StudentSheet;
   apiFetch: ApiFetch;
   onStudentSaved: (classKey: string, updated: StudentAttendance) => void;
+  onScheduleSaved: () => Promise<void>;
 }) {
   const present = sheet.rows.filter((r) => r.student.status && PRESENT.has(r.student.status));
-  const minutes = present.reduce((sum, r) => sum + (r.student.durationMinutes ?? 0), 0);
-  const untimed = present.filter((r) => r.student.durationMinutes == null).length;
+  const minutes = present.reduce((sum, r) => sum + (r.student.durationMinutes ?? r.student.scheduledMinutes ?? 0), 0);
+  const untimed = present.filter((r) => r.student.durationMinutes == null && r.student.scheduledMinutes == null).length;
+  const [editing, setEditing] = useState(false);
   const unrecorded = sheet.rows.filter((r) => r.student.status === null).length;
 
   return (
     <div className="card p-0 overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-charcoal">{sheet.name}</h3>
-          <span className={`badge ${BATCH_COLORS[sheet.batch] ?? 'badge-neutral'}`}>Batch {sheet.batch}</span>
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-charcoal">{sheet.name}</h3>
+            <span className={`badge ${BATCH_COLORS[sheet.batch] ?? 'badge-neutral'}`}>Batch {sheet.batch}</span>
+          </div>
+          <p className="text-xs text-gray-500">
+            {sheet.schedule ? describeSchedule(sheet.schedule) : 'Batch schedule'}{' '}
+            <button onClick={() => setEditing((v) => !v)} className="text-teal-600 hover:text-teal-800 font-medium ml-1">
+              {editing ? 'Close' : 'Edit schedule'}
+            </button>
+          </p>
         </div>
         <p className="text-sm text-charcoal">
           <span className="font-semibold">{present.length}</span>
@@ -258,6 +279,20 @@ function StudentTable({
           {unrecorded > 0 && <span className="block text-[11px] text-orange-600 text-right">{unrecorded} not recorded</span>}
         </p>
       </div>
+      {editing && (
+        <ScheduleEditor
+          studentId={sheet.studentId}
+          initial={sheet.schedule}
+          apiFetch={apiFetch}
+          onSaved={async () => {
+            setEditing(false);
+            await onScheduleSaved();
+          }}
+        />
+      )}
+      {sheet.rows.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-gray-400 text-center">No classes in this period.</p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -283,6 +318,105 @@ function StudentTable({
           </tbody>
         </table>
       </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleEditor({
+  studentId,
+  initial,
+  apiFetch,
+  onSaved,
+}: {
+  studentId: string;
+  initial: StudentSchedule | null;
+  apiFetch: ApiFetch;
+  onSaved: () => Promise<void>;
+}) {
+  const [days, setDays] = useState<number[]>(initial?.days ?? []);
+  const [minutes, setMinutes] = useState(String(initial?.durationMinutes ?? 60));
+  const [startTime, setStartTime] = useState(initial?.startTime ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const toggle = (d: number) => setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await apiFetch(`/api/students/${studentId}/schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          days,
+          durationMinutes: Math.max(5, Math.round(Number(minutes) || 60)),
+          startTime: startTime || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? 'Could not save schedule');
+      // Create the upcoming classes for the new days right away
+      await apiFetch('/api/classes/instances/auto-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daysAhead: 14 }),
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save schedule');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 space-y-3">
+      <div>
+        <p className="text-xs font-medium text-gray-600 mb-1.5">Class days</p>
+        <div className="flex flex-wrap gap-1.5">
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => toggle(d)}
+              aria-pressed={days.includes(d)}
+              className={`text-xs px-2.5 py-1 rounded-lg border ${
+                days.includes(d) ? 'bg-teal-600 text-white border-teal-600' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {DAY_LABELS[d]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-end gap-3 flex-wrap">
+        <label className="text-xs text-gray-600">
+          Minutes per class
+          <input
+            type="number"
+            min={5}
+            max={300}
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            className="input text-sm py-1 px-2 w-20 mt-1 block"
+          />
+        </label>
+        <label className="text-xs text-gray-600">
+          Start time (optional)
+          <input
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            className="input text-sm py-1 px-2 w-32 mt-1 block"
+          />
+        </label>
+        <button onClick={save} disabled={saving} className="btn-primary text-xs px-3 py-1.5">
+          {saving ? 'Saving…' : days.length ? 'Save schedule' : 'Use batch schedule'}
+        </button>
+      </div>
+      {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
 }
@@ -291,6 +425,7 @@ export default function ClassesPage() {
   const { user, apiFetch } = useAuthContext();
   const [batchLinks, setBatchLinks] = useState<BatchLinkRow[]>([]);
   const [classes, setClasses] = useState<ClassJoins[]>([]);
+  const [studentList, setStudentList] = useState<StudentInfo[]>([]);
   const [hasSlots, setHasSlots] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +450,7 @@ export default function ClassesPage() {
         );
         if (joinData.error) throw new Error(joinData.error);
         setClasses(joinData.classes ?? []);
+        setStudentList(joinData.students ?? []);
         setHasSlots((slotData.slots ?? []).length > 0 || (joinData.classes ?? []).length > 0);
       })
       .catch((err) => setError(err.message ?? 'Failed to load classes.'))
@@ -404,10 +540,14 @@ export default function ClassesPage() {
 
   // One sheet per student: their classes, newest first (classes already sorted)
   const sheetMap = new Map<string, StudentSheet>();
+  for (const st of studentList) {
+    if (batchFilter !== 'all' && st.batch !== batchFilter) continue;
+    sheetMap.set(st.studentId, { studentId: st.studentId, name: st.name, batch: st.batch, schedule: st.schedule, rows: [] });
+  }
   for (const c of visible) {
     if (c.cancelled) continue;
     for (const st of c.students) {
-      const sheet = sheetMap.get(st.studentId) ?? { studentId: st.studentId, name: st.name, batch: c.batch, rows: [] };
+      const sheet = sheetMap.get(st.studentId) ?? { studentId: st.studentId, name: st.name, batch: c.batch, schedule: null, rows: [] };
       sheet.rows.push({ cls: c, student: st });
       sheetMap.set(st.studentId, sheet);
     }
@@ -522,7 +662,13 @@ export default function ClassesPage() {
 
         {!loading &&
           sheets.map((sheet) => (
-            <StudentTable key={sheet.studentId} sheet={sheet} apiFetch={apiFetch} onStudentSaved={handleStudentSaved} />
+            <StudentTable
+              key={sheet.studentId}
+              sheet={sheet}
+              apiFetch={apiFetch}
+              onStudentSaved={handleStudentSaved}
+              onScheduleSaved={() => load(days)}
+            />
           ))}
       </div>
     </div>
