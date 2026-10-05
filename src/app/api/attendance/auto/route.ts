@@ -22,7 +22,7 @@ import { createNotification } from '@/services/notifications/create';
 import type { ClassInstance, AppSettings, LongAbsenceRecord, AbsenceRecord, AttendanceRecord } from '@/domain/types';
 import type { AttendanceStatus } from '@/domain/enums';
 import { z } from 'zod';
-import { loadBandCodes, batchKey } from '@/lib/classes/dedupe';
+import { loadBandCodes, batchKey, classKey, classStudentIds } from '@/lib/classes/dedupe';
 import { parseSchedule, startFor } from '@/lib/classes/student-schedule';
 
 function istToday(): string {
@@ -31,22 +31,29 @@ function istToday(): string {
   }).format(new Date());
 }
 
-/** Today's class for the student's batch (closest to now), plus all copies of it. */
+/**
+ * The class the student is joining now: today's class that is theirs (their
+ * own, a group or extra class they're in, or — without a schedule of their
+ * own — their batch class), closest to the current time. Also returns any
+ * duplicate copies of it.
+ */
 async function findTodaysClass(studentId: string): Promise<{ id: string; copyIds: string[] } | null> {
   const profile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, studentId);
   const bandId = profile?.currentBatchBandId as string | undefined;
-  if (!bandId) return null;
+  const mySchedule = parseSchedule(profile?.classSchedule);
 
   const today = istToday();
-  const mySchedule = parseSchedule(profile?.classSchedule);
-  if (mySchedule && !mySchedule.days.includes(new Date(`${today}T00:00:00Z`).getUTCDay())) return null;
-
   const bandCodes = await loadBandCodes();
-  const myBatch = batchKey(bandCodes, bandId);
+  const myBatch = bandId ? batchKey(bandCodes, bandId) : null;
   const todays = (await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
     { type: 'where', field: 'scheduledStartTime', op: '>=', value: `${today}T00:00:00+05:30` },
     { type: 'where', field: 'scheduledStartTime', op: '<=', value: `${today}T23:59:59+05:30` },
-  ])).filter((i) => batchKey(bandCodes, i.batchBandId) === myBatch && !String(i.status ?? '').includes('cancel'));
+  ])).filter((i) => {
+    if (String(i.status ?? '').includes('cancel')) return false;
+    const ids = classStudentIds(i);
+    if (ids.length) return ids.includes(studentId);
+    return !mySchedule && !!myBatch && batchKey(bandCodes, i.batchBandId) === myBatch;
+  });
   if (todays.length === 0) return null;
 
   const now = Date.now();
@@ -55,7 +62,8 @@ async function findTodaysClass(studentId: string): Promise<{ id: string; copyIds
       Math.abs(new Date(String(a.scheduledStartTime)).getTime() - now) -
       Math.abs(new Date(String(b.scheduledStartTime)).getTime() - now),
   )[0];
-  return { id: closest.id, copyIds: todays.map((i) => i.id) };
+  const key = classKey(bandCodes, closest);
+  return { id: closest.id, copyIds: todays.filter((i) => classKey(bandCodes, i) === key).map((i) => i.id) };
 }
 
 const AutoAttendanceSchema = z.object({
@@ -116,7 +124,12 @@ export async function POST(request: NextRequest) {
     let classStart = new Date(classInstance.scheduledStartTime).getTime();
     const ownProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, studentId);
     const ownSchedule = parseSchedule(ownProfile?.classSchedule);
-    if (ownSchedule && classInstance.scheduledStartTime) {
+    const participants = classStudentIds(classInstance as unknown as Record<string, unknown>);
+    if (participants.length && !participants.includes(studentId)) {
+      return Response.json({ error: 'This class is not yours' }, { status: 403 });
+    }
+    // Own / group / extra classes already carry the right start time
+    if (ownSchedule && classInstance.scheduledStartTime && participants.length === 0) {
       const date = classInstance.scheduledStartTime.slice(0, 10);
       const own = startFor(ownSchedule, new Date(`${date}T00:00:00Z`).getUTCDay());
       if (own) classStart = new Date(`${date}T${own}:00+05:30`).getTime();

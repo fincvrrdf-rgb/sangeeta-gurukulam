@@ -1,8 +1,8 @@
 /**
  * Student — My Classes
- * One Join button using the batch's permanent Meet link. Clicking it records
- * attendance for today's class (the server finds it) and opens Meet.
- * Shows when the next class is — no per-date list.
+ * The student's next class (their own, a group or an extra class) with one
+ * Join button for that class's Meet link. Clicking it opens Meet and records
+ * attendance automatically. Below, the next few classes coming up.
  */
 
 'use client';
@@ -19,6 +19,8 @@ interface ClassInstance {
   status: string;
   batchBandId: string;
   batchBand?: string;
+  kind?: string;
+  isGroup?: boolean;
 }
 
 // Use Intl.DateTimeFormat so the IST calendar date is correct for any viewer timezone.
@@ -83,10 +85,14 @@ export default function JoinClassPage() {
   const nextClass = active[0] ?? null;
   const isLive = !!nextClass && new Date(nextClass.scheduledStartTime).getTime() - now <= 15 * 60_000;
 
-  // The batch's single stable link (same for every class — API guarantees this)
-  const withLink = instances.find((i) => i.meetLink || i.googleMeetLink);
-  const stableLink = withLink ? (withLink.meetLink || withLink.googleMeetLink) : null;
-  const batchLabel = withLink ? (withLink.batchBand || withLink.batchBandId) : '';
+  // The next class's own link (own / group / extra), else any link the student has
+  const linkOf = (i: ClassInstance | null) => (i ? i.meetLink || i.googleMeetLink || null : null);
+  const fallback = instances.find((i) => linkOf(i));
+  const joinLink = linkOf(nextClass) ?? linkOf(fallback ?? null);
+  const batchLabel = (nextClass ?? fallback)?.batchBand || (nextClass ?? fallback)?.batchBandId || '';
+  const nextIsToday = !!nextClass && nextClass.scheduledStartTime.slice(0, 10) === todayIST();
+  const comingUp = active.slice(1, 6);
+  const label = (i: ClassInstance) => (i.isGroup ? 'Group class' : i.kind === 'extra' ? 'Extra class' : null);
 
   async function handleJoin(link: string) {
     // Open Meet first so pop-up blockers don't stop it, then record attendance
@@ -95,7 +101,7 @@ export default function JoinClassPage() {
       const res = await apiFetch('/api/attendance/auto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(nextIsToday && nextClass ? { classInstanceId: nextClass.id } : {}),
       });
       const json = await res.json();
       if (json.message) {
@@ -148,7 +154,9 @@ export default function JoinClassPage() {
         <div className="card space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-charcoal">Batch {batchLabel}</p>
+              <p className="text-sm font-semibold text-charcoal">
+                {nextClass && label(nextClass) ? label(nextClass) : `Batch ${batchLabel}`}
+              </p>
               {nextClass ? (
                 <p className="text-sm text-gray-500 mt-0.5">
                   {isLive ? 'Class is on now' : 'Next class'}: {formatDate(nextClass.scheduledStartTime.slice(0, 10))},{' '}
@@ -161,18 +169,32 @@ export default function JoinClassPage() {
             {isLive && <span className="badge badge-success flex-shrink-0">Live Now</span>}
           </div>
 
-          {stableLink ? (
+          {joinLink ? (
             <>
-              <button onClick={() => handleJoin(stableLink)} className="btn-primary w-full text-center">
+              <button onClick={() => handleJoin(joinLink)} className="btn-primary w-full text-center">
                 {isLive ? '🔴 Join Class — Google Meet' : 'Join Class — Google Meet'}
               </button>
-              <p className="text-xs text-gray-400 text-center">
-                {stableLink.replace('https://', '')} · same link for every class
-              </p>
+              <p className="text-xs text-gray-400 text-center">{joinLink.replace('https://', '')}</p>
             </>
           ) : (
             <p className="text-xs text-gray-400">Class link not set yet — please check with your teacher.</p>
           )}
+        </div>
+      )}
+
+      {!loading && comingUp.length > 0 && (
+        <div className="card p-0">
+          <p className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Coming up</p>
+          <ul className="divide-y divide-gray-100">
+            {comingUp.map((i) => (
+              <li key={i.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                <span className="text-charcoal">
+                  {formatDate(i.scheduledStartTime.slice(0, 10))}, {formatTime(i.scheduledStartTime)} – {formatTime(i.scheduledEndTime)}
+                </span>
+                {label(i) && <span className="badge badge-info">{label(i)}</span>}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
