@@ -9,9 +9,8 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { uploadFile } from '@/lib/storage/upload-client';
 
 type UploadStage = 'idle' | 'uploading' | 'saving' | 'success' | 'error';
 
@@ -79,30 +78,8 @@ export default function UploadPaymentPage() {
     setProgress(0);
 
     try {
-      // 1. Upload to Firebase Storage
-      const ext = file.name.split('.').pop() ?? 'bin';
-      const storageRef = ref(
-        storage,
-        `payment_proofs/${user.uid}/${cycleMonth}/${Date.now()}.${ext}`
-      );
-
-      const uploadTask = uploadBytesResumable(storageRef, file, {
-        contentType: file.type,
-      });
-
-      const downloadURL: string = await new Promise((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snap) => {
-            setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
-          },
-          reject,
-          async () => {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            resolve(url);
-          }
-        );
-      });
+      // 1. Upload to Supabase Storage (private bucket)
+      const uploaded = await uploadFile(apiFetch, { kind: 'payment', cycleMonth }, file, setProgress);
 
       // 2. Save metadata to API
       setStage('saving');
@@ -111,7 +88,8 @@ export default function UploadPaymentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cycleMonth,
-          storagePath: storageRef.fullPath,
+          storagePath: uploaded.path,
+          storageProvider: 'supabase',
           fileName: file.name,
           mimeType: file.type,
           fileSizeBytes: file.size,

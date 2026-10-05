@@ -14,9 +14,44 @@
  * recordings at the 64 kbps opus bitrate the recorder uses.
  */
 
-const RAW_URL = process.env.SUPABASE_URL ?? '';
+// The project URL isn't secret; the service-role key is (server env only).
+const RAW_URL = process.env.SUPABASE_URL || 'https://cqyndfjimosijmcpkolk.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'recordings';
+
+/** Buckets: `materials` is public (lyrics, resources); the others are private. */
+export const BUCKETS = {
+  recordings: BUCKET,
+  materials: 'materials',
+  paymentProofs: 'payment-proofs',
+} as const;
+
+function objectPath(path: string): string {
+  return encodeURIComponent(path).replace(/%2F/g, '/');
+}
+
+/** Permanent public URL of a file in a public bucket (e.g. materials). */
+export function supabasePublicUrl(bucket: string, path: string): string {
+  return `${baseUrl()}/storage/v1/object/public/${bucket}/${objectPath(path)}`;
+}
+
+/**
+ * Short-lived URL the browser can PUT a file to directly (no size limit from
+ * our own server). Returns the absolute upload URL.
+ */
+export async function createSignedUploadUrl(bucket: string, path: string): Promise<string> {
+  const res = await fetch(`${baseUrl()}/storage/v1/object/upload/sign/${bucket}/${objectPath(path)}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { message?: string }).message ?? `Supabase upload link failed (${res.status})`);
+  }
+  const { url } = (await res.json()) as { url: string };
+  return `${baseUrl()}/storage/v1${url}`;
+}
 
 export function supabaseConfigured(): boolean {
   return Boolean(RAW_URL && SERVICE_KEY);
@@ -38,9 +73,10 @@ export async function uploadToSupabase(
   path: string,
   body: Buffer,
   contentType: string,
+  bucket: string = BUCKET,
 ): Promise<void> {
   const res = await fetch(
-    `${baseUrl()}/storage/v1/object/${BUCKET}/${encodeURIComponent(path).replace(/%2F/g, '/')}`,
+    `${baseUrl()}/storage/v1/object/${bucket}/${objectPath(path)}`,
     {
       method: 'POST',
       headers: {
@@ -64,9 +100,10 @@ export async function uploadToSupabase(
 export async function getSupabaseSignedUrl(
   path: string,
   expiresInSeconds = 3600,
+  bucket: string = BUCKET,
 ): Promise<string> {
   const res = await fetch(
-    `${baseUrl()}/storage/v1/object/sign/${BUCKET}/${encodeURIComponent(path).replace(/%2F/g, '/')}`,
+    `${baseUrl()}/storage/v1/object/sign/${bucket}/${objectPath(path)}`,
     {
       method: 'POST',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },

@@ -1,3 +1,26 @@
+# Recording & Material Storage (Supabase)
+
+**Project already created:** `sangeeta-gurukulam` in Supabase (region Mumbai),
+URL `https://cqyndfjimosijmcpkolk.supabase.co`, with these buckets:
+
+| Bucket | Access | Holds |
+|---|---|---|
+| `materials` | public | lyrics attachments, resources |
+| `recordings` | private | practice recordings |
+| `payment-proofs` | private | payment proof uploads |
+
+**The one setting still needed:** in Vercel → the `sangeeta-gurukulam` project →
+Settings → Environment Variables, add `SUPABASE_SERVICE_ROLE_KEY` = the
+`service_role` key from Supabase → Project Settings → API Keys (keep it secret),
+then redeploy. (`SUPABASE_URL` is optional — the app defaults to the URL above.)
+
+**Moving old files:** files uploaded before the switch are still on Firebase.
+On the teacher's Lyrics page, press **Move them now** in the banner; it copies
+lyrics files, resources, payment proofs and recordings to Supabase and lists
+anything that couldn't be read so it can be uploaded again.
+
+---
+
 # Recording Storage Setup (Supabase — free)
 
 Practice recordings are stored in **Supabase Storage** (free tier: 1 GB storage,

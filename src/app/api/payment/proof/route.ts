@@ -17,6 +17,7 @@ import { z } from 'zod';
 const PaymentProofSchema = z.object({
   cycleMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
   storagePath: z.string().min(1),
+  storageProvider: z.enum(['supabase', 'firebase']).optional(),
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
   fileSizeBytes: z.number().int().positive(),
@@ -58,6 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { cycleMonth, storagePath, fileName, mimeType, fileSizeBytes, notes } = parsed.data;
+    const storageProvider = parsed.data.storageProvider ?? 'firebase';
+    if (storageProvider === 'supabase' && !storagePath.startsWith(`${auth.uid}/`)) {
+      return Response.json({ error: 'Invalid storage path' }, { status: 400 });
+    }
 
     // Create payment proof upload record
     const proofId = await createDoc(COLLECTIONS.PAYMENT_PROOF_UPLOADS, {
@@ -65,6 +70,7 @@ export async function POST(request: NextRequest) {
       cycleMonth,
       uploadedAt: nowISO(),
       storageRef: storagePath,
+      storageProvider,
       fileName,
       mimeType,
       fileSizeBytes,
