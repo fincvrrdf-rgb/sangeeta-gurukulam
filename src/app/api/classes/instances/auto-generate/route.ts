@@ -106,21 +106,24 @@ export async function POST(request: NextRequest) {
 
     // Classes the teacher added herself (extra / group) that stand in for a
     // student's regular class: same start time, or marked as replacing it
-    const extraAt = new Set<string>();     // studentId|date|HH:MM
-    const replacedDay = new Set<string>(); // studentId|date
+    const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+    const extraStarts = new Map<string, number[]>(); // studentId|date → start minutes
+    const replacedDay = new Set<string>();           // studentId|date
     for (const inst of existingInstances) {
       if (inst.kind !== 'extra' || String(inst.status ?? '').includes('cancel')) continue;
       const iso = String(inst.scheduledStartTime ?? '');
       const dateStr = iso.slice(0, 10);
-      const hhmm = iso.slice(11, 16);
       for (const sid of classStudentIds(inst)) {
-        extraAt.add(`${sid}|${dateStr}|${hhmm}`);
+        extraStarts.set(`${sid}|${dateStr}`, [...(extraStarts.get(`${sid}|${dateStr}`) ?? []), toMin(iso.slice(11, 16))]);
         if (inst.replacesRegular) replacedDay.add(`${sid}|${dateStr}`);
       }
     }
+    // Within 3 hours of the regular time = the same lesson (SAME_LESSON_WINDOW_MS)
     const coveredByExtra = (studentIds: string[], dateStr: string, start: string) =>
       studentIds.length > 0 &&
-      studentIds.every((sid) => extraAt.has(`${sid}|${dateStr}|${start}`) || replacedDay.has(`${sid}|${dateStr}`));
+      studentIds.every((sid) =>
+        replacedDay.has(`${sid}|${dateStr}`) ||
+        (extraStarts.get(`${sid}|${dateStr}`) ?? []).some((m) => Math.abs(m - toMin(start)) <= 180));
 
     // Load teacher unavailability blocks
     const unavailability = await queryDocs<Record<string, unknown>>(COLLECTIONS.TEACHER_AVAILABILITY_BLOCKS, [

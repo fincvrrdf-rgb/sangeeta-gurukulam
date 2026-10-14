@@ -572,8 +572,8 @@ function StudentEditor({
           <input value={name} onChange={(e) => setName(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-48" />
         </label>
         <label className="text-xs text-gray-600">
-          Phone
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className="input text-sm py-1 px-2 mt-1 block w-40" />
+          WhatsApp number
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="+91 98765 43210" className="input text-sm py-1 px-2 mt-1 block w-44" />
         </label>
         <label className="text-xs text-gray-600">
           Guardian

@@ -8,7 +8,7 @@
 import { NextRequest } from 'next/server';
 import { adminAuth } from '@/lib/firebase/admin';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { queryDocs, setDoc, getDoc, nowISO } from '@/lib/firebase/firestore';
+import { queryDocs, setDoc, getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { COLLECTIONS } from '@/domain/constants';
 import { z } from 'zod';
@@ -17,20 +17,22 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth(request, ['super_admin']);
 
-    const allProfiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
+    const allProfiles = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.STUDENT_PROFILES, []);
 
     // Filter out super_admin and teacher accounts — only real students
     const emailMap: Record<string, string> = {};
     const students: Record<string, unknown>[] = [];
 
     for (const s of allProfiles) {
+      // Deleted students stay deleted (deactivated ones are still listed)
+      if (s.deletedAt) continue;
       try {
-        const fbUser = await adminAuth.getUser(s.userId as string);
+        const fbUser = await adminAuth.getUser((s.userId as string) || s.id);
         const claims = fbUser.customClaims as Record<string, unknown> | undefined;
         const role = claims?.role as string | undefined;
         // Skip anyone who is super_admin or teacher
         if (role === 'super_admin' || role === 'teacher') continue;
-        emailMap[s.userId as string] = fbUser.email || '';
+        emailMap[(s.userId as string) || s.id] = fbUser.email || '';
         students.push(s);
       } catch { /* skip deleted auth accounts */ }
     }
@@ -78,6 +80,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Re-adding a student who was deleted earlier: let them sign in again
+    if (firebaseUser.disabled) {
+      await adminAuth.updateUser(firebaseUser.uid, { disabled: false });
+    }
+
     // Set custom claim to student
     await adminAuth.setCustomUserClaims(firebaseUser.uid, { role: 'student' });
 
@@ -100,8 +107,17 @@ export async function POST(request: NextRequest) {
     });
 
     // Create student profile
-    const existingProfile = await getDoc(COLLECTIONS.STUDENT_PROFILES, firebaseUser.uid);
-    if (!existingProfile) {
+    const existingProfile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, firebaseUser.uid);
+    if (existingProfile?.deletedAt) {
+      // Previously deleted: bring the same profile back
+      await updateDoc(COLLECTIONS.STUDENT_PROFILES, firebaseUser.uid, {
+        fullName: displayName,
+        ...(phone ? { phone } : {}),
+        isActive: true,
+        deletedAt: null,
+        deletedBy: null,
+      });
+    } else if (!existingProfile) {
       await setDoc(COLLECTIONS.STUDENT_PROFILES, firebaseUser.uid, {
         userId: firebaseUser.uid,
         fullName: displayName,

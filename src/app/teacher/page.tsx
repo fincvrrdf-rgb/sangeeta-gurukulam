@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { WhatsAppNumberCard } from '@/components/profile/WhatsAppNumberCard';
 
 interface DashboardStats {
   todayClasses: number;
@@ -159,6 +160,8 @@ export default function TeacherDashboard() {
       </div>
 
       <div className="px-4 py-8 space-y-8">
+
+      <WhatsAppNumberCard who="teacher" />
 
       {/* Stats */}
       <section>

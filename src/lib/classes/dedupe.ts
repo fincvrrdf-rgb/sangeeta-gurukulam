@@ -57,6 +57,12 @@ export function sameSlotKey(inst: Record<string, unknown>): string | null {
   return `${[...ids].sort().join(',')}@${t}`;
 }
 
+/** How far apart a regular class and a class the teacher added that day can
+ * start and still be the same lesson (e.g. 5:00 regular, taken at 6:00). */
+export const SAME_LESSON_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+export const startMs = (inst: Record<string, unknown>) => new Date(String(inst.scheduledStartTime ?? '')).getTime();
+
 export const isCancelledClass = (inst: Record<string, unknown>) => String(inst.status ?? '').includes('cancel');
 
 /**

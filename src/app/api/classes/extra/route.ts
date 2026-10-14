@@ -13,7 +13,7 @@ import { createDoc, getDoc, queryDocs, updateDoc, nowISO } from '@/lib/firebase/
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { addMinutesHHMM } from '@/lib/classes/student-schedule';
-import { classStudentIds } from '@/lib/classes/dedupe';
+import { classStudentIds, SAME_LESSON_WINDOW_MS } from '@/lib/classes/dedupe';
 import { normaliseMeetLink } from '@/lib/classes/links';
 import { z } from 'zod';
 
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Replace each student's own regular class that day (if nothing recorded on
-    // it). A regular class at the very same time is always replaced — it's the
-    // same class, and keeping both shows it twice.
+    // it). A regular class within a few hours of this one is always replaced —
+    // it's the same lesson, and keeping both shows it twice.
     let replaced = 0;
     {
       const sameDay = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
@@ -86,8 +86,10 @@ export async function POST(request: NextRequest) {
         if (inst.id === instanceId || inst.kind === 'extra' || String(inst.status ?? '').includes('cancel')) continue;
         const ids = classStudentIds(inst);
         if (ids.length !== 1 || !studentIds.includes(ids[0])) continue;
-        const sameTime = new Date(String(inst.scheduledStartTime)).getTime() === new Date(start).getTime();
-        if (!replacesRegular && !sameTime) continue;
+        // Within a few hours of the regular time it's the same lesson
+        const sameLesson = Math.abs(new Date(String(inst.scheduledStartTime)).getTime() - new Date(start).getTime())
+          <= SAME_LESSON_WINDOW_MS;
+        if (!replacesRegular && !sameLesson) continue;
         const recs = await queryDocs(COLLECTIONS.ATTENDANCE_RECORDS, [
           { type: 'where', field: 'classInstanceId', op: '==', value: inst.id },
         ]);

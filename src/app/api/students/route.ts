@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
 
     const students: { id: string; name: string; batchBand: string }[] = [];
     for (const p of profiles) {
+      if (p.deletedAt || p.isActive === false) continue;
       students.push({
         id: p.userId as string,
         name: (p.fullName as string) || (p.userId as string),

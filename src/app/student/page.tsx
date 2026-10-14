@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { WhatsAppNumberCard } from '@/components/profile/WhatsAppNumberCard';
 
 interface PaymentSummary {
   consecutiveViolations: number;
@@ -97,6 +98,8 @@ export default function StudentDashboard() {
       </div>
 
       <div className="px-4 py-6 space-y-8">
+
+      <WhatsAppNumberCard who="student" />
 
       {/* Violation warning banner */}
       {showViolationWarning && (
