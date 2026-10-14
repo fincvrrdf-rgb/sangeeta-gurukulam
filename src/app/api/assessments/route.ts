@@ -75,9 +75,22 @@ export async function GET(request: NextRequest) {
       if (p?.dependentName) names.set(`${id}_dependent`, p.dependentName as string);
     }));
 
+    // Unit names (older records only stored the unit ID)
+    const unitIds = [...new Set(raw.filter((a) => !a.teachingUnitName && a.teachingUnitId).map((a) => String(a.teachingUnitId)))];
+    const unitNames = new Map<string, string>();
+    await Promise.all(unitIds.map(async (id) => {
+      const u = await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, id);
+      if (u?.unitName) unitNames.set(id, u.unitName);
+    }));
+
     // Normalise: older records predate studentName and the status lifecycle
     const assessments = raw.map((a) => ({
       ...a,
+      teachingUnitName: (a.teachingUnitName as string) || unitNames.get(String(a.teachingUnitId)) || 'Lesson',
+      // Titles once defaulted to "<unit ID> assessment"
+      title: !a.title || a.title === `${a.teachingUnitId} assessment`
+        ? `${(a.teachingUnitName as string) || unitNames.get(String(a.teachingUnitId)) || 'Lesson'} assessment`
+        : a.title,
       studentName: (a.studentName as string) || names.get(String(a.studentId)) || 'Student',
       status: (a.status as string) || (a.result ? 'graded' : 'assigned'),
     }));
@@ -121,15 +134,16 @@ export async function POST(request: NextRequest) {
       : (profile?.fullName as string) || 'Student';
 
     const unit = await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, teachingUnitId);
-    const unitName = unit?.unitName ?? teachingUnitId;
+    const unitName = unit?.unitName || 'Lesson';
 
     const assessmentId = await createDoc(COLLECTIONS.LESSON_ASSESSMENTS, {
       studentId,
       studentName,
       teacherId: auth.uid,
       teachingUnitId,
+      teachingUnitName: unitName,
       assessmentType,
-      title: title ?? `${unitName} assessment`,
+      title: title || `${unitName} assessment`,
       instructions: instructions ?? null,
       dueDate: dueDate ?? null,
       status: gradedNow ? 'graded' : 'assigned',
