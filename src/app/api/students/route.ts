@@ -14,20 +14,20 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request, ['teacher', 'super_admin']);
 
-    const profiles = await queryDocs<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, []);
+    const profiles = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.STUDENT_PROFILES, []);
 
     const students: { id: string; name: string; batchBand: string }[] = [];
     for (const p of profiles) {
       if (p.deletedAt || p.isActive === false) continue;
       students.push({
-        id: p.userId as string,
-        name: (p.fullName as string) || (p.userId as string),
+        id: (p.userId as string) || p.id,
+        name: (p.fullName as string) || (p.displayName as string) || 'Student',
         batchBand: (p.currentBatchBandId as string) || '',
       });
       // Include co-learner as a virtual entry so they can be assessed separately
       if (p.dependentName) {
         students.push({
-          id: `${p.userId as string}_dependent`,
+          id: `${(p.userId as string) || p.id}_dependent`,
           name: `${p.dependentName as string} (co-learner with ${(p.fullName as string) || p.userId})`,
           batchBand: (p.currentBatchBandId as string) || '',
         });

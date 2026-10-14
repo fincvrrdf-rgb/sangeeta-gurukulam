@@ -15,6 +15,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs } from '@/lib/firebase/firestore';
+import { adminAuth } from '@/lib/firebase/admin';
 import { COLLECTIONS } from '@/domain/constants';
 import { loadBandCodes, batchKey, classKey, classStudentIds, sameSlotKey, isCancelledClass, startMs, SAME_LESSON_WINDOW_MS } from '@/lib/classes/dedupe';
 import { parseSchedule, startFor, addMinutesHHMM, type StudentSchedule } from '@/lib/classes/student-schedule';
@@ -112,6 +113,8 @@ export async function GET(request: NextRequest) {
     const joinedOn = new Map<string, string>(); // studentId → first day they count from
     const studentInfo: StudentInfo[] = [];
     const deletedIds = new Set(profiles.filter((p) => p.deletedAt).map((p) => p.id));
+    // Deactivated students have no classes from today on (past ones stay as history)
+    const inactiveIds = new Set(profiles.filter((p) => p.isActive === false).map((p) => p.id));
     for (const p of profiles) {
       const name = (p.fullName as string) || 'Student';
       nameById.set(p.id, name);
@@ -232,7 +235,10 @@ export async function GET(request: NextRequest) {
       )[0];
       const date = String(main.scheduledStartTime).slice(0, 10);
       const batch = batchKey(bandCodes, main.batchBandId);
-      const participants = classStudentIds(main).filter((sid) => !deletedIds.has(sid));
+      const mainDate = String(main.scheduledStartTime ?? '').slice(0, 10);
+      const participants = classStudentIds(main).filter(
+        (sid) => !deletedIds.has(sid) && !(mainDate >= today && inactiveIds.has(sid)),
+      );
       if (classStudentIds(main).length && !participants.length) continue; // only deleted students
       const start = String(main.scheduledStartTime ?? '');
       const end = String(main.scheduledEndTime ?? '');
@@ -271,7 +277,7 @@ export async function GET(request: NextRequest) {
       // student with their own schedule on a day that isn't one of their days
       const classDow = new Date(`${(main.movedFrom as string) || date}T00:00:00Z`).getUTCDay();
       for (const sid of best.keys()) {
-        if (deletedIds.has(sid)) continue;
+        if (deletedIds.has(sid) || (mainDate >= today && inactiveIds.has(sid))) continue;
         const sched = scheduleById.get(sid);
         if (!participants.length && sched && !sched.days.includes(classDow)) continue;
         roster.add(sid);
@@ -387,10 +393,85 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    classes.sort((a, b) => b.start.localeCompare(a.start));
+    // One lesson per student per slot, even when a student has two accounts
+    // with the same name (e.g. added by the teacher with one email, signed in
+    // with another): both accounts get classes, which looked like duplicates.
+    const lessons = mergeSameLesson(classes);
+
+    // Tell the teacher which students have more than one active account
+    const byName = new Map<string, StudentInfo[]>();
+    for (const info of studentInfo) {
+      const k = normName(info.name);
+      byName.set(k, [...(byName.get(k) ?? []), info]);
+    }
+    const duplicateAccounts: { name: string; accounts: { studentId: string; email: string; lastSignIn: string | null }[] }[] = [];
+    for (const infos of byName.values()) {
+      if (infos.length < 2) continue;
+      const accounts = await Promise.all(infos.map(async (info) => {
+        try {
+          const u = await adminAuth.getUser(info.studentId);
+          return { studentId: info.studentId, email: u.email ?? '', lastSignIn: u.metadata.lastSignInTime ?? null };
+        } catch {
+          return { studentId: info.studentId, email: '', lastSignIn: null };
+        }
+      }));
+      duplicateAccounts.push({ name: infos[0].name, accounts });
+    }
+
+    lessons.sort((a, b) => b.start.localeCompare(a.start));
     studentInfo.sort((a, b) => a.name.localeCompare(b.name));
-    return Response.json({ success: true, today, classes, students: studentInfo });
+    return Response.json({ success: true, today, classes: lessons, students: studentInfo, duplicateAccounts });
   } catch (error) {
     return authErrorResponse(error);
   }
+}
+
+const normName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Classes on the same day at the same start time for the same student name(s)
+ * are one lesson: merge them. The real class wins over a placeholder for a
+ * scheduled day, then the one the teacher joined or added herself; each
+ * student keeps whichever entry has attendance recorded.
+ */
+function mergeSameLesson(classes: ClassJoins[]): ClassJoins[] {
+  const rank = (c: ClassJoins) =>
+    (c.instanceId ? 4 : 0) + (c.teacherJoinedAt ? 2 : 0) + (c.kind === 'extra' ? 1 : 0);
+  const byLesson = new Map<string, ClassJoins[]>();
+  const out: ClassJoins[] = [];
+  for (const c of classes) {
+    if (c.cancelled || c.students.length === 0) { out.push(c); continue; }
+    const names = [...new Set(c.students.map((st) => normName(st.name)))].sort().join('|');
+    const k = `${c.date}|${new Date(c.start).getTime()}|${names}`;
+    const list = byLesson.get(k);
+    if (list) list.push(c);
+    else { byLesson.set(k, [c]); out.push(c); }
+  }
+  return out.map((c) => {
+    if (c.cancelled || c.students.length === 0) return c;
+    const names = [...new Set(c.students.map((st) => normName(st.name)))].sort().join('|');
+    const copies = byLesson.get(`${c.date}|${new Date(c.start).getTime()}|${names}`) ?? [c];
+    if (copies.length === 1) return c;
+    const winner = [...copies].sort((a, b) => rank(b) - rank(a))[0];
+    const students = new Map<string, StudentAttendance>();
+    for (const copy of [winner, ...copies.filter((x) => x !== winner)]) {
+      for (const st of copy.students) {
+        const k = normName(st.name);
+        const prev = students.get(k);
+        if (!prev || (prev.status === null && st.status !== null) || (prev.viaLink && st.status !== null && !st.viaLink)) {
+          students.set(k, st);
+        }
+      }
+    }
+    const joined = copies.map((x) => x.teacherJoinedAt).filter((x): x is string => !!x).sort()[0] ?? null;
+    return {
+      ...winner,
+      key: c.key,
+      copyIds: [...new Set(copies.flatMap((x) => x.copyIds))],
+      meetLink: winner.meetLink ?? copies.find((x) => x.meetLink)?.meetLink ?? null,
+      teacherJoinedAt: joined,
+      enrolled: Math.max(...copies.map((x) => x.enrolled)),
+      students: [...students.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
 }
