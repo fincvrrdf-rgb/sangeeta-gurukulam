@@ -46,6 +46,20 @@ export function classKey(bandCodes: Record<string, string>, inst: Doc): string {
 }
 
 /**
+ * Same students at the same start time = the same class, even when one copy is
+ * the regular class and the other an extra class the teacher added for that
+ * slot. Returns null for batch classes (no student list).
+ */
+export function sameSlotKey(inst: Record<string, unknown>): string | null {
+  const ids = classStudentIds(inst);
+  const t = new Date(String(inst.scheduledStartTime ?? '')).getTime();
+  if (!ids.length || Number.isNaN(t)) return null;
+  return `${[...ids].sort().join(',')}@${t}`;
+}
+
+export const isCancelledClass = (inst: Record<string, unknown>) => String(inst.status ?? '').includes('cancel');
+
+/**
  * Pick one slot per batch + weekday. Among duplicates, the start time shared
  * by most of them wins (ties → most recently updated), so a stray slot with
  * the wrong time doesn't override the real schedule.

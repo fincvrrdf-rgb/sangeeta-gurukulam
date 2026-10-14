@@ -14,7 +14,7 @@ import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
 import { parseSchedule } from '@/lib/classes/student-schedule';
-import { classStudentIds } from '@/lib/classes/dedupe';
+import { classStudentIds, sameSlotKey, isCancelledClass } from '@/lib/classes/dedupe';
 import { loadLinkContext, resolveClassLink } from '@/lib/classes/links';
 
 export const dynamic = 'force-dynamic';
@@ -98,6 +98,23 @@ export async function GET(request: NextRequest) {
         if (studentBatchCode && batchCodeMap[i.batchBandId] === studentBatchCode) return true;
         return false;
       });
+    }
+
+    // Same students at the same start time is one class (e.g. a regular class
+    // plus an extra class added for that slot): show it once, preferring the
+    // class the teacher added herself
+    {
+      const bySlot = new Map<string, ClassInstance>();
+      const keep: ClassInstance[] = [];
+      for (const i of instances) {
+        const raw = i as unknown as Record<string, unknown>;
+        const slot = isCancelledClass(raw) ? null : sameSlotKey(raw);
+        if (!slot) { keep.push(i); continue; }
+        const prev = bySlot.get(slot);
+        if (!prev) { bySlot.set(slot, i); continue; }
+        if ((raw.kind === 'extra') && (prev as unknown as Record<string, unknown>).kind !== 'extra') bySlot.set(slot, i);
+      }
+      instances = [...keep, ...bySlot.values()];
     }
 
     // Step 3: compute enrolled learner count per batch (students + co-learners)
