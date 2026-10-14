@@ -20,10 +20,18 @@ interface Assessment {
   studentName: string;
   teachingUnitName: string;
   assessmentType: AssessmentType;
+  status?: 'assigned' | 'submitted' | 'graded';
+  title?: string;
   totalScore: number;
   maxScore: number;
   result: AssessmentResult;
   createdAt: string;
+}
+
+function statusBadge(status?: string): { cls: string; label: string } {
+  if (status === 'graded') return { cls: 'badge badge-success', label: 'Graded' };
+  if (status === 'submitted') return { cls: 'badge badge-warning', label: 'To grade' };
+  return { cls: 'badge badge-info', label: 'Awaiting video' };
 }
 
 function resultBadge(result: AssessmentResult): string {
@@ -122,10 +130,10 @@ export default function AssessmentListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-charcoal">Assessments</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Recent student evaluations</p>
+          <p className="text-sm text-gray-500 mt-0.5">Assign a test, watch the video, grade it</p>
         </div>
-        <Link href="/teacher/assessments/new" className="btn-primary">
-          + New
+        <Link href="/teacher/assessments/assign" className="btn-primary">
+          + Assign Test
         </Link>
       </div>
 
@@ -147,9 +155,9 @@ export default function AssessmentListPage() {
         <div className="card flex flex-col items-center py-16 text-center">
           <span className="text-4xl mb-3">📊</span>
           <p className="text-gray-600 font-medium">No assessments yet</p>
-          <p className="text-gray-400 text-sm mt-1">Create the first one to start tracking student progress.</p>
-          <Link href="/teacher/assessments/new" className="btn-primary mt-4">
-            Create Assessment
+          <p className="text-gray-400 text-sm mt-1">Assign a test and your student will upload a video to be graded.</p>
+          <Link href="/teacher/assessments/assign" className="btn-primary mt-4">
+            Assign a Test
           </Link>
         </div>
       ) : (
@@ -178,7 +186,7 @@ export default function AssessmentListPage() {
                 {/* Student + Unit */}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-charcoal truncate">{a.studentName}</p>
-                  <p className="text-xs text-gray-500 truncate">{a.teachingUnitName}</p>
+                  <p className="text-xs text-gray-500 truncate">{a.title || a.teachingUnitName}</p>
                   {/* Mobile: type + date inline */}
                   <div className="flex items-center gap-2 mt-1 sm:hidden">
                     <span className={typeBadge(a.assessmentType)}>{typeLabel(a.assessmentType)}</span>
@@ -186,26 +194,49 @@ export default function AssessmentListPage() {
                   </div>
                 </div>
 
+                {/* Lifecycle status */}
+                <span className={`${statusBadge(a.status).cls} flex-shrink-0`}>
+                  {statusBadge(a.status).label}
+                </span>
+
                 {/* Type (sm+) */}
                 <span className={`hidden sm:inline-flex ${typeBadge(a.assessmentType)}`}>
                   {typeLabel(a.assessmentType)}
                 </span>
 
-                {/* Score */}
+                {/* Score — only meaningful once graded */}
                 <div className="flex-shrink-0 text-right">
-                  <p className={`text-sm font-semibold ${percentColor(pct)}`}>
-                    {a.totalScore}/{a.maxScore}
-                  </p>
-                  <p className="text-xs text-gray-400">{pct}%</p>
+                  {a.status === 'graded' && a.maxScore ? (
+                    <>
+                      <p className={`text-sm font-semibold ${percentColor(pct)}`}>
+                        {a.totalScore}/{a.maxScore}
+                      </p>
+                      <p className="text-xs text-gray-400">{pct}%</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-gray-300">—</p>
+                  )}
                 </div>
 
                 {/* Result */}
-                <span className={resultBadge(a.result)}>{a.result}</span>
+                {a.result ? (
+                  <span className={resultBadge(a.result)}>{a.result}</span>
+                ) : (
+                  <span className="badge badge-neutral">—</span>
+                )}
 
                 {/* Date (sm+) */}
                 <p className="hidden sm:block text-xs text-gray-500 w-20 flex-shrink-0 text-right">
                   {formatDate(a.createdAt)}
                 </p>
+
+                {/* Open / grade */}
+                <Link
+                  href={`/teacher/assessments/${a.id}`}
+                  className="text-xs font-medium text-teal-600 hover:text-teal-800 flex-shrink-0"
+                >
+                  {a.status === 'submitted' ? 'Grade' : 'Open'}
+                </Link>
 
                 {/* Delete */}
                 <button

@@ -782,12 +782,20 @@ export interface DevotionalCalendarEvent {
 export interface Notification {
   id: string;
   recipientId: string;
+  /** Mirror of recipientId — the client UIs query on this field */
+  userId: string;
   recipientRole: UserRole;
   type: NotificationType;
+  /** Mirror of type — the teacher UI reads this field for its icon */
+  notificationType: NotificationType;
   title: string;
   body: string;
   referenceType: string | null;
   referenceId: string | null;
+  /** Optional one-tap action, e.g. a wa.me link to message the other person */
+  actionUrl: string | null;
+  /** Button text for actionUrl, e.g. 'Message Priya on WhatsApp' */
+  actionLabel: string | null;
   isRead: boolean;
   readAt: string | null;
   channel: NotificationChannel;

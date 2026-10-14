@@ -37,6 +37,8 @@ interface AppNotification {
   readAt: string | null;
   referenceType: string | null;
   referenceId: string | null;
+  actionUrl: string | null;
+  actionLabel: string | null;
   createdAt: string;
 }
 
@@ -161,6 +163,8 @@ export default function NotificationsPage() {
             readAt: data.readAt ?? null,
             referenceType: data.referenceType ?? null,
             referenceId: data.referenceId ?? null,
+            actionUrl: data.actionUrl ?? null,
+            actionLabel: data.actionLabel ?? null,
             createdAt,
           };
         });
@@ -341,6 +345,18 @@ export default function NotificationsPage() {
                         <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
                           {notif.body}
                         </p>
+                        {notif.actionUrl && (
+                          <a
+                            href={notif.actionUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold text-green-700 border border-green-400 rounded-lg px-2.5 py-1 hover:bg-green-50"
+                          >
+                            <span aria-hidden>💬</span>
+                            {notif.actionLabel || 'Message on WhatsApp'}
+                          </a>
+                        )}
                         <div className="flex items-center justify-between mt-1.5">
                           <span className="text-xs text-gray-400">
                             {group === 'earlier'

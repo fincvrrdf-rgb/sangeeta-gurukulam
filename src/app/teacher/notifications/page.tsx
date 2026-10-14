@@ -15,6 +15,8 @@ interface Notification {
   title: string;
   body: string;
   notificationType: string;
+  actionUrl?: string | null;
+  actionLabel?: string | null;
   isRead: boolean;
   createdAt: string;
 }
@@ -25,6 +27,7 @@ function typeIcon(type: string): string {
   if (type.includes('LESSON_PLAN')) return '📑';
   if (type.includes('REPORT')) return '📊';
   if (type.includes('RECORDING')) return '🎤';
+  if (type.includes('ASSESSMENT')) return '📝';
   if (type.includes('ABSENCE')) return '📋';
   return '🔔';
 }
@@ -95,6 +98,18 @@ export default function TeacherNotificationsPage() {
                 {!n.isRead && <span className="w-2 h-2 bg-saffron-500 rounded-full mt-1.5 flex-shrink-0" />}
               </div>
               <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
+              {n.actionUrl && (
+                <a
+                  href={n.actionUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold text-green-700 border border-green-400 rounded-lg px-2.5 py-1 hover:bg-green-50"
+                >
+                  <span aria-hidden>💬</span>
+                  {n.actionLabel || 'Message on WhatsApp'}
+                </a>
+              )}
               <p className="text-xs text-gray-400 mt-1">
                 {new Date(n.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST
               </p>

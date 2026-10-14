@@ -45,6 +45,17 @@ service firebase.storage {
                    || isSuperAdmin();
     }
 
+    // --- Assessment videos (inside the student's recordings folder) ---
+    // Videos are larger than audio practice recordings: 200 MB max.
+    match /recordings/{studentId}/assessments/{allPaths=**} {
+      allow read: if isSuperAdmin() || isTeacher()
+                  || (isAuthenticated() && request.auth.uid == studentId);
+      allow write: if (isAuthenticated() && request.auth.uid == studentId
+                       && request.resource.size < 200 * 1024 * 1024
+                       && request.resource.contentType.matches('video/.*'))
+                   || isSuperAdmin();
+    }
+
     // --- Payment Proofs ---
     // SECURITY-CRITICAL: Contains personal financial data.
     // Student can upload their own proofs.
