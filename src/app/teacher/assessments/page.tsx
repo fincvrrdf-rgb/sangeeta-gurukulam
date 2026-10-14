@@ -118,7 +118,11 @@ export default function AssessmentListPage() {
   useEffect(() => {
     if (!user) return;
     apiFetch('/api/assessments')
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error ?? `Could not load assessments (${r.status})`);
+        return data;
+      })
       .then((data) => setAssessments(Array.isArray(data) ? data : data.assessments ?? []))
       .catch((err) => setError(err.message ?? 'Failed to load assessments.'))
       .finally(() => setLoading(false));

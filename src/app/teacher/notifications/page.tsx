@@ -5,7 +5,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { COLLECTIONS } from '@/domain/constants';
 import { useAuthContext } from '@/components/layout/AuthProvider';
@@ -39,14 +39,19 @@ export default function TeacherNotificationsPage() {
 
   useEffect(() => {
     if (!user) return;
+    // Filter on recipientId only: the Firestore rules authorise reads on that
+    // field, and a filter plus orderBy would need a composite index. Sorted here.
     const q = query(
       collection(db, COLLECTIONS.NOTIFICATIONS),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(50),
+      where('recipientId', '==', user.uid),
     );
     const unsub = onSnapshot(q, (snap) => {
-      setNotifications(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Notification, 'id'>) })));
+      setNotifications(
+        snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as Omit<Notification, 'id'>) }))
+          .sort((a, b) => String((b as { createdAt?: string }).createdAt ?? '').localeCompare(String((a as { createdAt?: string }).createdAt ?? '')))
+          .slice(0, 50),
+      );
       setLoading(false);
     }, () => setLoading(false));
     return unsub;

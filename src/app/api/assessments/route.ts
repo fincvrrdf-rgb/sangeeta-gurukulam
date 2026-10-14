@@ -49,21 +49,25 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
 
-    let constraints;
-    if (auth.role === 'student') {
-      constraints = [
-        { type: 'where' as const, field: 'studentId', op: '==' as const, value: auth.uid },
-        { type: 'orderBy' as const, field: 'createdAt', direction: 'desc' as const },
-      ];
-    } else {
-      const teacherId = searchParams.get('teacherId') ?? auth.uid;
-      constraints = [
-        { type: 'where' as const, field: 'teacherId', op: '==' as const, value: teacherId },
-        { type: 'orderBy' as const, field: 'createdAt', direction: 'desc' as const },
-      ];
-    }
+    // Filter only (no orderBy): a filter plus a sort needs a composite
+    // Firestore index this project doesn't have, and the query then failed,
+    // so the list always looked empty. Sorted in memory below instead.
+    const teacherId = searchParams.get('teacherId');
+    const constraints =
+      auth.role === 'student'
+        ? [{ type: 'where' as const, field: 'studentId', op: '==' as const, value: auth.uid }]
+        : auth.role === 'super_admin' && !teacherId
+          ? [] // the admin sees every assessment
+          : [{ type: 'where' as const, field: 'teacherId', op: '==' as const, value: teacherId ?? auth.uid }];
 
     const raw = await queryDocs<Record<string, unknown>>(COLLECTIONS.LESSON_ASSESSMENTS, constraints);
+    // Students also see their co-learner's tests
+    if (auth.role === 'student') {
+      raw.push(...(await queryDocs<Record<string, unknown>>(COLLECTIONS.LESSON_ASSESSMENTS, [
+        { type: 'where' as const, field: 'studentId', op: '==' as const, value: `${auth.uid}_dependent` },
+      ])));
+    }
+    raw.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
 
     // Older records have no studentName: look the names up
     const missing = [...new Set(raw.filter((a) => !a.studentName && a.studentId)
