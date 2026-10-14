@@ -16,7 +16,7 @@ import { useAuthContext } from '@/components/layout/AuthProvider';
 
 type AssessmentType = 'formative' | 'testing_day' | 'makeup';
 
-interface StudentOption { id?: string; userId?: string; fullName?: string; studentName?: string }
+interface StudentOption { id?: string; userId?: string; name?: string; fullName?: string; studentName?: string }
 interface UnitOption { id: string; unitName?: string }
 
 const TYPES: { value: AssessmentType; label: string }[] = [
@@ -155,7 +155,7 @@ export default function AssignAssessmentPage() {
             <option value="">{loadingOptions ? 'Loading…' : '— Select student —'}</option>
             {students.map((s) => {
               const id = s.id ?? s.userId ?? '';
-              const name = s.fullName ?? s.studentName ?? id;
+              const name = s.name || s.fullName || s.studentName || 'Student';
               return <option key={id} value={id}>{name}</option>;
             })}
           </select>

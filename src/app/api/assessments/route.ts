@@ -65,10 +65,20 @@ export async function GET(request: NextRequest) {
 
     const raw = await queryDocs<Record<string, unknown>>(COLLECTIONS.LESSON_ASSESSMENTS, constraints);
 
+    // Older records have no studentName: look the names up
+    const missing = [...new Set(raw.filter((a) => !a.studentName && a.studentId)
+      .map((a) => String(a.studentId).replace(/_dependent$/, '')))];
+    const names = new Map<string, string>();
+    await Promise.all(missing.map(async (id) => {
+      const p = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, id);
+      if (p?.fullName) names.set(id, p.fullName as string);
+      if (p?.dependentName) names.set(`${id}_dependent`, p.dependentName as string);
+    }));
+
     // Normalise: older records predate studentName and the status lifecycle
     const assessments = raw.map((a) => ({
       ...a,
-      studentName: (a.studentName as string) || (a.studentId as string) || 'Unknown',
+      studentName: (a.studentName as string) || names.get(String(a.studentId)) || 'Student',
       status: (a.status as string) || (a.result ? 'graded' : 'assigned'),
     }));
 
@@ -107,8 +117,8 @@ export async function POST(request: NextRequest) {
     const primaryId = isCoLearner ? studentId.replace('_dependent', '') : studentId;
     const profile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, primaryId);
     const studentName = isCoLearner
-      ? (profile?.dependentName as string) ?? studentId
-      : (profile?.fullName as string) ?? studentId;
+      ? (profile?.dependentName as string) || 'Co-learner'
+      : (profile?.fullName as string) || 'Student';
 
     const unit = await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, teachingUnitId);
     const unitName = unit?.unitName ?? teachingUnitId;

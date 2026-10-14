@@ -1059,6 +1059,9 @@ export default function ClassesPage() {
   const { user, apiFetch } = useAuthContext();
   const [classes, setClasses] = useState<ClassJoins[]>([]);
   const [studentList, setStudentList] = useState<StudentInfo[]>([]);
+  const [dupAccounts, setDupAccounts] = useState<
+    { name: string; accounts: { studentId: string; email: string; lastSignIn: string | null }[] }[]
+  >([]);
   const [batches, setBatches] = useState<BatchOption[]>([]);
   const [hasSlots, setHasSlots] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -1086,6 +1089,7 @@ export default function ClassesPage() {
         if (joinData.today) setToday(joinData.today);
         setClasses(joinData.classes ?? []);
         setStudentList(joinData.students ?? []);
+        setDupAccounts(joinData.duplicateAccounts ?? []);
         setHasSlots((slotData.slots ?? []).length > 0 || (joinData.classes ?? []).length > 0);
       })
       .catch((err) => setError(err.message ?? 'Failed to load classes.'))
@@ -1201,6 +1205,19 @@ export default function ClassesPage() {
       <h1 className="font-heading text-2xl font-bold text-charcoal">Classes</h1>
 
       {error && <div className="card border-red-300 bg-red-50 text-red-800 text-sm">{error}</div>}
+
+      {dupAccounts.length > 0 && (
+        <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900 space-y-1.5">
+          <p className="font-semibold">Some students have two accounts, so their classes are made twice</p>
+          {dupAccounts.map((d) => (
+            <p key={d.name}>
+              <strong>{d.name}</strong>:{' '}
+              {d.accounts.map((a) => `${a.email || 'no email'} (${a.lastSignIn ? `last signed in ${new Date(a.lastSignIn).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'never signed in'})`).join(' · ')}
+            </p>
+          ))}
+          <p className="text-xs">Delete the account the student doesn&apos;t use in Admin → Students. Until then each class is shown once here.</p>
+        </div>
+      )}
 
       {/* Upcoming classes: join, share details, add extra / group classes */}
       <div className="card p-0 overflow-hidden">
