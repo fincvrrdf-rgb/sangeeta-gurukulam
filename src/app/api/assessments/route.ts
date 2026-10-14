@@ -1,11 +1,16 @@
 /**
  * API: GET/POST /api/assessments
  *
- * Lesson assessments management.
- * - GET: List assessments (teacher: by teacherId, student: own)
- * - POST: Teacher creates a new assessment for a student
+ * Lesson assessments.
+ * - GET:  List assessments (teacher: ones they set, student: their own)
+ * - POST: Teacher ASSIGNS a test to a student. The student then uploads a
+ *         video of themselves performing it, and the teacher grades it after
+ *         watching — see /api/assessments/[id]/submit and PATCH /api/assessments/[id].
  *
- * If result is 'pass', attempts to advance the student via progression gates.
+ * Lifecycle: assigned → submitted → graded
+ *
+ * Scores may still be supplied at creation time (the older one-shot flow), in
+ * which case the assessment is created already graded.
  */
 
 import { NextRequest } from 'next/server';
@@ -13,17 +18,28 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
-import { advanceStudent } from '@/services/progression/gates';
+import { createNotification } from '@/services/notifications/create';
+import { whatsAppLink, firstName } from '@/lib/whatsapp';
 import { z } from 'zod';
 
 const CreateAssessmentSchema = z.object({
   studentId: z.string().min(1),
   teachingUnitId: z.string().min(1),
   assessmentType: z.enum(['formative', 'testing_day', 'makeup']),
-  scores: z.record(z.string(), z.number()),
-  totalScore: z.number(),
-  maxScore: z.number().positive(),
-  result: z.enum(['pass', 'fail', 'needs_improvement']),
+  title: z.string().max(200).optional(),
+  instructions: z.string().max(2000).optional(),
+  dueDate: z.string().optional(),
+  // Present only when the teacher grades immediately instead of assigning.
+  // The rubric form posts `rubricScores` as an array; accept both shapes.
+  scores: z.record(z.string(), z.number()).optional(),
+  rubricScores: z.array(z.object({
+    dimensionKey: z.string(),
+    score: z.number(),
+    maxScore: z.number().optional(),
+  })).optional(),
+  totalScore: z.number().optional(),
+  maxScore: z.number().positive().optional(),
+  result: z.enum(['pass', 'fail', 'needs_improvement']).optional(),
   feedback: z.string().optional(),
 });
 
@@ -49,10 +65,11 @@ export async function GET(request: NextRequest) {
 
     const raw = await queryDocs<Record<string, unknown>>(COLLECTIONS.LESSON_ASSESSMENTS, constraints);
 
-    // Normalise: ensure studentName is always present (older records may lack it)
+    // Normalise: older records predate studentName and the status lifecycle
     const assessments = raw.map((a) => ({
       ...a,
       studentName: (a.studentName as string) || (a.studentId as string) || 'Unknown',
+      status: (a.status as string) || (a.result ? 'graded' : 'assigned'),
     }));
 
     return Response.json({ assessments });
@@ -71,7 +88,19 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { studentId, teachingUnitId, assessmentType, scores, totalScore, maxScore, result, feedback } = parsed.data;
+    const {
+      studentId, teachingUnitId, assessmentType, title, instructions, dueDate,
+      scores, rubricScores, totalScore, maxScore, result, feedback,
+    } = parsed.data;
+
+    // Normalise the rubric form's array shape into a flat {key: score} record
+    const normalisedScores = scores
+      ?? (rubricScores
+        ? Object.fromEntries(rubricScores.map((d) => [d.dimensionKey, d.score]))
+        : null);
+
+    // Graded on creation only when the teacher supplied a verdict
+    const gradedNow = Boolean(result);
 
     // Resolve student name — co-learners use a _dependent virtual ID
     const isCoLearner = studentId.endsWith('_dependent');
@@ -81,21 +110,37 @@ export async function POST(request: NextRequest) {
       ? (profile?.dependentName as string) ?? studentId
       : (profile?.fullName as string) ?? studentId;
 
+    const unit = await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, teachingUnitId);
+    const unitName = unit?.unitName ?? teachingUnitId;
+
     const assessmentId = await createDoc(COLLECTIONS.LESSON_ASSESSMENTS, {
       studentId,
       studentName,
       teacherId: auth.uid,
       teachingUnitId,
       assessmentType,
-      scores,
-      totalScore,
-      maxScore,
-      result,
+      title: title ?? `${unitName} assessment`,
+      instructions: instructions ?? null,
+      dueDate: dueDate ?? null,
+      status: gradedNow ? 'graded' : 'assigned',
+      // Video submission — filled in by the student
+      videoPath: null,
+      videoProvider: null,
+      videoMimeType: null,
+      videoFileName: null,
+      videoSizeBytes: null,
+      submittedAt: null,
+      // Grading
+      scores: normalisedScores,
+      totalScore: totalScore ?? null,
+      maxScore: maxScore ?? null,
+      result: result ?? null,
       feedback: feedback ?? null,
-      assessedAt: nowISO(),
+      assessedAt: gradedNow ? nowISO() : null,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
     });
 
-    // Audit log
     const { ipAddress, userAgent } = extractRequestMeta(request);
     await writeAuditLog({
       actorId: auth.uid,
@@ -103,29 +148,48 @@ export async function POST(request: NextRequest) {
       action: 'ASSESSMENT_CREATED',
       entityType: 'lesson_assessment',
       entityId: assessmentId,
-      newState: { studentId, teachingUnitId, assessmentType, result, totalScore, maxScore },
+      newState: { studentId, teachingUnitId, assessmentType, status: gradedNow ? 'graded' : 'assigned' },
       ipAddress,
       userAgent,
     });
 
-    // If student passed, attempt progression advancement
-    let advancementTriggered = false;
-    if (result === 'pass') {
-      try {
-        // Note: advanceStudent requires knowing the next unit ID.
-        // The teacher will trigger full advancement via the progression API.
-        // Here we just log that the assessment passed.
-        advancementTriggered = true;
-      } catch (advanceError) {
-        console.error('[ASSESSMENT] Advancement check failed:', advanceError);
+    // Tell the student a test is waiting, and hand the teacher a WhatsApp link
+    // so they can nudge them directly. Notification failure must never fail the request.
+    let whatsapp: string | null = null;
+    try {
+      const studentPhone = (profile?.phone as string) ?? null;
+      whatsapp = whatsAppLink(
+        studentPhone,
+        gradedNow
+          ? `Hi ${firstName(studentName)}, your ${unitName} assessment has been graded. Open Sangeeta Gurukulam to see the feedback.`
+          : `Hi ${firstName(studentName)}, I've set a ${unitName} assessment for you. ` +
+            `Please record a video (so your taalam is visible) and upload it in Sangeeta Gurukulam → Assessments.`,
+      );
+
+      if (!isCoLearner) {
+        await createNotification({
+          recipientId: studentId,
+          type: gradedNow ? 'ASSESSMENT_GRADED' : 'TESTING_DAY_UPCOMING',
+          title: gradedNow ? 'Assessment graded' : 'New assessment assigned',
+          body: gradedNow
+            ? `Your ${unitName} assessment has been graded: ${result}.`
+            : `${unitName} — record a video of yourself performing it and upload it from Assessments.`,
+          referenceType: 'lesson_assessment',
+          referenceId: assessmentId,
+        });
       }
+    } catch (notifyError) {
+      console.error('[ASSESSMENT_NOTIFY_FAILED]', assessmentId, notifyError);
     }
 
     return Response.json({
       success: true,
       assessmentId,
-      result,
-      advancementTriggered,
+      status: gradedNow ? 'graded' : 'assigned',
+      result: result ?? null,
+      /** Teacher-facing one-tap nudge; null when the student has no usable number */
+      whatsappLink: whatsapp,
+      studentName,
     });
   } catch (error) {
     return authErrorResponse(error);

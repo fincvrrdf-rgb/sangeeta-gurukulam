@@ -17,6 +17,10 @@ interface NotificationInput {
   body: string;
   referenceType?: string;
   referenceId?: string;
+  /** Optional one-tap action, e.g. a wa.me link to message the other person */
+  actionUrl?: string | null;
+  /** Button text for actionUrl, e.g. 'Message Priya on WhatsApp' */
+  actionLabel?: string | null;
 }
 
 /**
@@ -30,15 +34,23 @@ export async function createNotification(input: NotificationInput): Promise<stri
     return '';
   }
 
-  // Create in-app notification
+  // Create in-app notification.
+  // recipientId/type are canonical (the Firestore rules authorise reads on
+  // recipientId). userId/notificationType are written as mirrors because the
+  // student page, teacher page and notification bell all query those names —
+  // writing both keeps every reader working.
   const notificationId = await createDoc(COLLECTIONS.NOTIFICATIONS, {
     recipientId: input.recipientId,
+    userId: input.recipientId,
     recipientRole: user.role,
     type: input.type,
+    notificationType: input.type,
     title: input.title,
     body: input.body,
     referenceType: input.referenceType ?? null,
     referenceId: input.referenceId ?? null,
+    actionUrl: input.actionUrl ?? null,
+    actionLabel: input.actionLabel ?? null,
     isRead: false,
     readAt: null,
     channel: 'in_app' as NotificationChannel,

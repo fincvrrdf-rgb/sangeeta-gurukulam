@@ -15,18 +15,20 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { BUCKETS, createSignedUploadUrl, supabaseConfigured, supabasePublicUrl } from '@/lib/storage/supabase';
-import { STORAGE_PATHS } from '@/domain/constants';
+import { STORAGE_PATHS, ASSESSMENT_ALLOWED_MIME_TYPES } from '@/domain/constants';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
 const Schema = z.object({
-  kind: z.enum(['lyrics', 'resource', 'payment', 'recording']),
+  kind: z.enum(['lyrics', 'resource', 'payment', 'recording', 'assessment']),
   fileName: z.string().min(1).max(200),
   lyricsId: z.string().regex(/^[\w-]+$/).optional(),
   cycleMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   teachingUnitId: z.string().regex(/^[\w-]+$/).optional(),
   weekOf: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  assessmentId: z.string().regex(/^[\w-]+$/).optional(),
+  contentType: z.string().max(100).optional(),
 });
 
 function safeName(name: string): string {
@@ -46,12 +48,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { kind, fileName, lyricsId, cycleMonth, teachingUnitId, weekOf } = parsed.data;
+    const { kind, fileName, lyricsId, cycleMonth, teachingUnitId, weekOf, assessmentId, contentType } = parsed.data;
     const isStaff = auth.role === 'teacher' || auth.role === 'super_admin';
     let bucket: string;
     let path: string;
 
-    if (kind === 'recording') {
+    if (kind === 'assessment') {
+      // Assessment submissions are VIDEO-only so the taalam stays visible.
+      if (!assessmentId) return Response.json({ error: 'assessmentId is required' }, { status: 400 });
+      const looksLikeVideo =
+        (contentType && ASSESSMENT_ALLOWED_MIME_TYPES.includes(contentType)) ||
+        (!contentType && /\.(mp4|webm|mov|mkv|3gp)$/i.test(fileName));
+      if (!looksLikeVideo) {
+        return Response.json(
+          { error: 'Assessments accept video files only (MP4, WebM, MOV) so your taalam is visible.' },
+          { status: 400 },
+        );
+      }
+      bucket = BUCKETS.recordings; // same private bucket as practice recordings
+      path = STORAGE_PATHS.assessmentVideo(auth.uid, assessmentId, safeName(fileName));
+    } else if (kind === 'recording') {
       if (!weekOf) return Response.json({ error: 'weekOf is required' }, { status: 400 });
       bucket = BUCKETS.recordings;
       path = STORAGE_PATHS.recording(auth.uid, teachingUnitId || 'general', weekOf, safeName(fileName));

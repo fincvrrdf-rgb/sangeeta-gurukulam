@@ -298,7 +298,29 @@ export const STORAGE_PATHS = {
   /** Lyrics attachments: /lyrics/{lyricsId}/{filename} */
   lyricsAttachment: (lyricsId: string, filename: string) =>
     `lyrics/${lyricsId}/${filename}`,
+
+  /**
+   * Assessment videos: /recordings/{studentId}/assessments/{assessmentId}/{filename}
+   * (inside the student's recordings folder, which the storage rules already
+   * let the student write and the teacher read)
+   */
+  assessmentVideo: (studentId: string, assessmentId: string, filename: string) =>
+    `recordings/${studentId}/assessments/${assessmentId}/${filename}`,
 } as const;
+
+// =============================================================================
+// Assessment Video Constraints
+// =============================================================================
+
+/** Assessments are VIDEO-only so the taalam (hand gestures) stays visible. */
+export const ASSESSMENT_MAX_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
+export const ASSESSMENT_ALLOWED_MIME_TYPES = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',  // .mov — iPhone default
+  'video/x-matroska',
+  'video/3gpp',       // older Android phones
+];
 
 // =============================================================================
 // Recording Constraints

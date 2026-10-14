@@ -16,7 +16,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { queryDocs } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
-import { loadBandCodes, batchKey, classKey, classStudentIds } from '@/lib/classes/dedupe';
+import { loadBandCodes, batchKey, classKey, classStudentIds, sameSlotKey, isCancelledClass } from '@/lib/classes/dedupe';
 import { parseSchedule, startFor, addMinutesHHMM, type StudentSchedule } from '@/lib/classes/student-schedule';
 import { loadLinkContext, resolveClassLink } from '@/lib/classes/links';
 
@@ -55,6 +55,7 @@ export interface StudentAttendance {
 export interface ClassJoins {
   key: string;
   instanceId: string;
+  copyIds: string[];               // every live copy (cancel them all together)
   kind: 'regular' | 'extra';
   isGroup: boolean;
   batch: string;
@@ -133,11 +134,36 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Merge duplicate copies of the same class
-    const groups = new Map<string, Doc[]>();
+    // Merge duplicate copies of the same class: same identity (classKey), or the
+    // same students at the same start time (e.g. a regular class plus an extra
+    // class the teacher added for that same slot)
+    const parent = new Map<string, string>();
+    const find = (k: string): string => {
+      let r = k;
+      while (parent.has(r) && parent.get(r) !== r) r = parent.get(r)!;
+      parent.set(k, r);
+      return r;
+    };
+    const union = (a: string, b: string) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(rb, ra);
+    };
+    const slotOwner = new Map<string, string>();
     for (const inst of instances) {
       if (!String(inst.scheduledStartTime ?? '').slice(0, 10)) continue;
       const key = classKey(bandCodes, inst);
+      find(key);
+      const slot = isCancelledClass(inst) ? null : sameSlotKey(inst);
+      if (!slot) continue;
+      const owner = slotOwner.get(slot);
+      if (owner) union(owner, key);
+      else slotOwner.set(slot, key);
+    }
+    const groups = new Map<string, Doc[]>();
+    for (const inst of instances) {
+      if (!String(inst.scheduledStartTime ?? '').slice(0, 10)) continue;
+      const key = find(classKey(bandCodes, inst));
       groups.set(key, [...(groups.get(key) ?? []), inst]);
     }
 
@@ -164,8 +190,15 @@ export async function GET(request: NextRequest) {
 
     const classes: ClassJoins[] = [];
     for (const [key, group] of groups) {
-      const live = group.filter((i) => !String(i.status ?? '').includes('cancel'));
+      const live = group.filter((i) => !isCancelledClass(i));
+      // Copies cancelled only because another class took their place (a
+      // replacing extra/group class, or a duplicate) aren't separate classes
+      if (!live.length && group.every((i) => /^(replaced_by_group_or_extra|duplicate)/i.test(String(i.cancellationReason ?? '')))) {
+        continue;
+      }
+      // The class the teacher added herself (extra) wins over the generated copy
       const main = [...(live.length ? live : group)].sort((a, b) =>
+        Number(b.kind === 'extra') - Number(a.kind === 'extra') ||
         String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')),
       )[0];
       const date = String(main.scheduledStartTime).slice(0, 10);
@@ -245,6 +278,7 @@ export async function GET(request: NextRequest) {
       classes.push({
         key,
         instanceId: main.id,
+        copyIds: (live.length ? live : [main]).map((i) => i.id),
         kind: main.kind === 'extra' ? 'extra' : 'regular',
         isGroup: participants.length > 1,
         batch,
@@ -289,6 +323,7 @@ export async function GET(request: NextRequest) {
         classes.push({
           key: `virtual:${info.studentId}|${date}`,
           instanceId: '',
+          copyIds: [],
           kind: 'regular',
           isGroup: false,
           batch: info.batch,

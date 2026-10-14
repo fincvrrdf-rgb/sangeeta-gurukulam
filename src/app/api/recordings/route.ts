@@ -11,6 +11,8 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, queryDocs, getDoc, nowISO } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
+import { createNotification } from '@/services/notifications/create';
+import { whatsAppLink, firstName } from '@/lib/whatsapp';
 import { z } from 'zod';
 import { AnalysisSchema, generateRecordingReview } from '@/lib/ai/recording-review';
 
@@ -141,6 +143,36 @@ export async function POST(request: NextRequest) {
       ipAddress,
       userAgent,
     });
+
+    // Tell the student's teacher a new recording is waiting, with a one-tap
+    // WhatsApp link back to the student. The recording is already saved, so a
+    // notification failure must never fail the request.
+    try {
+      const profile = await getDoc<Record<string, unknown>>(COLLECTIONS.STUDENT_PROFILES, auth.uid);
+      const teacherId = profile?.primaryTeacherId as string | undefined;
+
+      if (teacherId) {
+        const studentName = (profile?.fullName as string) || 'A student';
+        const pieceLabel = unit?.unitName ?? pieceName ?? 'practice';
+        const link = whatsAppLink(
+          (profile?.phone as string) ?? null,
+          `Hi ${firstName(studentName)}, I've received your ${pieceLabel} recording. I'll listen and send feedback soon.`,
+        );
+
+        await createNotification({
+          recipientId: teacherId,
+          type: 'RECORDING_SUBMITTED',
+          title: 'New practice recording',
+          body: `${studentName} submitted a recording for ${pieceLabel}.`,
+          referenceType: 'practice_recording',
+          referenceId: recordingId,
+          actionUrl: link,
+          actionLabel: link ? `Message ${firstName(studentName)} on WhatsApp` : null,
+        });
+      }
+    } catch (notifyError) {
+      console.error('[RECORDING_NOTIFY_FAILED]', recordingId, notifyError);
+    }
 
     return Response.json({ success: true, recordingId, aiReview });
   } catch (error) {

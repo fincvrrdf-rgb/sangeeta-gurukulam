@@ -24,6 +24,7 @@ const STUDENT_NAV: NavItem[] = [
   { label: 'Mark Absence', href: '/student/absence/mark', icon: '📋' },
   { label: 'Lyrics', href: '/student/lyrics', icon: '📝' },
   { label: 'Practice', href: '/student/practice/record', icon: '🎤' },
+  { label: 'Assessments', href: '/student/assessments', icon: '📝' },
   { label: 'Riyaz', href: '/student/riyaz', icon: '🎵' },
   { label: 'Payment', href: '/student/payment/status', icon: '💰' },
   { label: 'Reports', href: '/student/reports', icon: '📊' },

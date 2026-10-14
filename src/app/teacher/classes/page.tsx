@@ -50,6 +50,7 @@ interface BatchOption {
 interface ClassJoins {
   key: string;
   instanceId: string;
+  copyIds?: string[];
   kind: 'regular' | 'extra';
   isGroup: boolean;
   batch: string;
@@ -340,6 +341,15 @@ function ClassEditor({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? 'Could not update the class');
+      // Other copies of this same class would stay behind at the old time
+      for (const id of cls.copyIds ?? []) {
+        if (id === instanceId) continue;
+        await apiFetch(`/api/classes/instances/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Duplicate of a class that was moved' }),
+        });
+      }
       await onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not update the class');
@@ -720,11 +730,15 @@ function UpcomingClasses({
     if (!confirm('Cancel this class?')) return;
     setBusy(c.key);
     try {
-      await apiFetch(`/api/classes/instances/${c.instanceId}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Cancelled by teacher' }),
-      });
+      // A duplicated slot has several copies: cancel them all so none reappears
+      const ids = c.copyIds?.length ? c.copyIds : [c.instanceId];
+      for (const id of ids) {
+        await apiFetch(`/api/classes/instances/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Cancelled by teacher' }),
+        });
+      }
       await onChanged();
     } finally {
       setBusy(null);

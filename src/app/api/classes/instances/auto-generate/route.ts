@@ -104,6 +104,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Classes the teacher added herself (extra / group) that stand in for a
+    // student's regular class: same start time, or marked as replacing it
+    const extraAt = new Set<string>();     // studentId|date|HH:MM
+    const replacedDay = new Set<string>(); // studentId|date
+    for (const inst of existingInstances) {
+      if (inst.kind !== 'extra' || String(inst.status ?? '').includes('cancel')) continue;
+      const iso = String(inst.scheduledStartTime ?? '');
+      const dateStr = iso.slice(0, 10);
+      const hhmm = iso.slice(11, 16);
+      for (const sid of classStudentIds(inst)) {
+        extraAt.add(`${sid}|${dateStr}|${hhmm}`);
+        if (inst.replacesRegular) replacedDay.add(`${sid}|${dateStr}`);
+      }
+    }
+    const coveredByExtra = (studentIds: string[], dateStr: string, start: string) =>
+      studentIds.length > 0 &&
+      studentIds.every((sid) => extraAt.has(`${sid}|${dateStr}|${start}`) || replacedDay.has(`${sid}|${dateStr}`));
+
     // Load teacher unavailability blocks
     const unavailability = await queryDocs<Record<string, unknown>>(COLLECTIONS.TEACHER_AVAILABILITY_BLOCKS, [
       { type: 'where', field: 'startDate', op: '>=', value: toDateStr(today) },
@@ -204,7 +222,7 @@ export async function POST(request: NextRequest) {
       if (String(inst.status ?? 'scheduled') !== 'scheduled') continue;
       const key = classKey(bandCodes, inst as Record<string, unknown> & { id: string });
       const p = planFor(dateStr, new Date(`${dateStr}T00:00:00Z`).getUTCDay()).find((x) => x.key === key);
-      if (!p) { stale.push(inst); continue; }
+      if (!p || coveredByExtra(p.studentIds, dateStr, p.start)) { stale.push(inst); continue; }
       if (classStudentIds(inst).length === 0) continue; // batch slot classes keep their own times
       const start = istTimestamp(dateStr, p.start);
       const end = istTimestamp(dateStr, p.end);
@@ -242,6 +260,7 @@ export async function POST(request: NextRequest) {
 
       for (const p of planFor(dateStr, date.getDay())) {
         if (existingKeys.has(p.key)) continue;
+        if (coveredByExtra(p.studentIds, dateStr, p.start)) continue;
         if (p.teacherId && blockedDaysByTeacher.get(p.teacherId)?.has(dateStr)) continue;
 
         try {
