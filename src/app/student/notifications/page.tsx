@@ -14,8 +14,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
-  limit,
   onSnapshot,
   doc,
   updateDoc,
@@ -137,11 +135,11 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!user) return;
 
+    // Filter on recipientId only (what the Firestore rules authorise; no
+    // composite index needed) and sort below
     const q = query(
       collection(db, COLLECTIONS.NOTIFICATIONS),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(100),
+      where('recipientId', '==', user.uid),
     );
 
     const unsub = onSnapshot(
@@ -168,7 +166,7 @@ export default function NotificationsPage() {
             createdAt,
           };
         });
-        setNotifications(items);
+        setNotifications(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100));
         setLoading(false);
       },
       (err) => {

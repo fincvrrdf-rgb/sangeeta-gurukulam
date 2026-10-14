@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 import { COLLECTIONS } from '@/domain/constants';
@@ -42,21 +42,24 @@ export function NotificationBell() {
   useEffect(() => {
     if (!user) return;
 
+    // Equality filters only (recipientId is what the Firestore rules
+    // authorise; no composite index needed); newest first, sorted here
     const q = query(
       collection(db, COLLECTIONS.NOTIFICATIONS),
-      where('userId', '==', user.uid),
+      where('recipientId', '==', user.uid),
       where('isRead', '==', false),
-      orderBy('createdAt', 'desc'),
-      limit(10),
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
       setUnreadCount(snapshot.size);
       setPreviews(
-        snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<NotificationPreview, 'id'>),
-        })),
+        snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...(doc.data() as Omit<NotificationPreview, 'id'>),
+          }))
+          .sort((a, b) => String((b as { createdAt?: string }).createdAt ?? '').localeCompare(String((a as { createdAt?: string }).createdAt ?? '')))
+          .slice(0, 10),
       );
     }, () => {
       // Silently handle permission errors (user may not have index yet)
