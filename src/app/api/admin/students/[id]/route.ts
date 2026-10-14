@@ -8,9 +8,10 @@
  */
 
 import { NextRequest } from 'next/server';
-import { adminAuth } from '@/lib/firebase/admin';
+import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
-import { getDoc, updateDoc, nowISO } from '@/lib/firebase/firestore';
+import { getDoc, updateDoc, deleteDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { classStudentIds } from '@/lib/classes/dedupe';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { COLLECTIONS } from '@/domain/constants';
 import { z } from 'zod';
@@ -136,16 +137,33 @@ export async function DELETE(
       deletedBy: auth.uid,
       updatedAt: nowISO(),
     });
-    await updateDoc(COLLECTIONS.USERS, id, {
-      isActive: false,
-      deletedAt: nowISO(),
-      updatedAt: nowISO(),
-    });
+    // The user doc may not exist (e.g. student added before sign-up): merge,
+    // so a missing doc can't stop the rest of the delete
+    await adminDb.collection(COLLECTIONS.USERS).doc(id)
+      .set({ isActive: false, deletedAt: nowISO(), updatedAt: nowISO() }, { merge: true });
 
     // Disable Firebase Auth account
     try {
       await adminAuth.updateUser(id, { disabled: true });
     } catch { /* skip if not found */ }
+
+    // Their upcoming classes: remove their own ones (unless something was
+    // recorded on them) and take them off group classes
+    const upcoming = await queryDocs<Record<string, unknown> & { id: string }>(COLLECTIONS.CLASS_INSTANCES, [
+      { type: 'where', field: 'scheduledStartTime', op: '>=', value: new Date().toISOString().slice(0, 10) },
+    ]);
+    for (const inst of upcoming) {
+      const ids = classStudentIds(inst);
+      if (!ids.includes(id)) continue;
+      if (ids.length > 1) {
+        await updateDoc(COLLECTIONS.CLASS_INSTANCES, inst.id, { studentIds: ids.filter((x) => x !== id) });
+        continue;
+      }
+      const recs = await queryDocs(COLLECTIONS.ATTENDANCE_RECORDS, [
+        { type: 'where', field: 'classInstanceId', op: '==', value: inst.id },
+      ]);
+      if (recs.length === 0) await deleteDoc(COLLECTIONS.CLASS_INSTANCES, inst.id);
+    }
 
     const { ipAddress, userAgent } = extractRequestMeta(request);
     await writeAuditLog({

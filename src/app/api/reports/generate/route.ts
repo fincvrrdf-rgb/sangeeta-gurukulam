@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const s of students) {
+      if (s.deletedAt || s.isActive === false) continue;
       try {
         const id = await generateWeeklyReport({
           studentId: s.userId as string,

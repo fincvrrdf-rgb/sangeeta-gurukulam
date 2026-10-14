@@ -14,7 +14,7 @@ import type { ClassInstance, ClassSlot } from '@/domain/types';
 import type { QueryConstraint } from '@/lib/firebase/firestore';
 import { z } from 'zod';
 import { parseSchedule } from '@/lib/classes/student-schedule';
-import { classStudentIds, sameSlotKey, isCancelledClass } from '@/lib/classes/dedupe';
+import { classStudentIds, sameSlotKey, isCancelledClass, startMs, SAME_LESSON_WINDOW_MS } from '@/lib/classes/dedupe';
 import { loadLinkContext, resolveClassLink } from '@/lib/classes/links';
 
 export const dynamic = 'force-dynamic';
@@ -115,6 +115,25 @@ export async function GET(request: NextRequest) {
         if ((raw.kind === 'extra') && (prev as unknown as Record<string, unknown>).kind !== 'extra') bySlot.set(slot, i);
       }
       instances = [...keep, ...bySlot.values()];
+
+      // A regular class with a class the teacher added for the same student
+      // that day, within a few hours, is the same lesson: show the added one
+      const added = instances.filter((i) => {
+        const raw = i as unknown as Record<string, unknown>;
+        return raw.kind === 'extra' && !isCancelledClass(raw);
+      });
+      instances = instances.filter((i) => {
+        const raw = i as unknown as Record<string, unknown>;
+        const ids = classStudentIds(raw);
+        if (raw.kind === 'extra' || ids.length !== 1 || isCancelledClass(raw)) return true;
+        const date = String(raw.scheduledStartTime ?? '').slice(0, 10);
+        return !added.some((e) => {
+          const er = e as unknown as Record<string, unknown>;
+          return String(er.scheduledStartTime ?? '').slice(0, 10) === date
+            && classStudentIds(er).includes(ids[0])
+            && Math.abs(startMs(er) - startMs(raw)) <= SAME_LESSON_WINDOW_MS;
+        });
+      });
     }
 
     // Step 3: compute enrolled learner count per batch (students + co-learners)
