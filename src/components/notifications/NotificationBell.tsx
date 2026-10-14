@@ -51,16 +51,18 @@ export function NotificationBell() {
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
-      setUnreadCount(snapshot.size);
-      setPreviews(
-        snapshot.docs
-          .map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as Omit<NotificationPreview, 'id'>),
-          }))
-          .sort((a, b) => String((b as { createdAt?: string }).createdAt ?? '').localeCompare(String((a as { createdAt?: string }).createdAt ?? '')))
-          .slice(0, 10),
-      );
+      // Recent unread only: older notifications were never visible before
+      // (the query used to fail), so don't surface a backlog in the bell
+      const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const recent = snapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<NotificationPreview, 'id'>),
+        }))
+        .filter((n) => String((n as { createdAt?: string }).createdAt ?? '') >= since)
+        .sort((a, b) => String((b as { createdAt?: string }).createdAt ?? '').localeCompare(String((a as { createdAt?: string }).createdAt ?? '')));
+      setUnreadCount(recent.length);
+      setPreviews(recent.slice(0, 10));
     }, () => {
       // Silently handle permission errors (user may not have index yet)
       setUnreadCount(0);
