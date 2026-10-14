@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthContext } from '@/components/layout/AuthProvider';
 import { DAY_LABELS, describeSchedule, type StudentSchedule } from '@/lib/classes/student-schedule';
+import { mergeSameLessons } from '@/lib/classes/merge-lessons';
 
 interface StudentAttendance {
   studentId: string;
@@ -1087,7 +1088,8 @@ export default function ClassesPage() {
         );
         if (joinData.error) throw new Error(joinData.error);
         if (joinData.today) setToday(joinData.today);
-        setClasses(joinData.classes ?? []);
+        // Same day, same time, same student = one lesson, however many copies exist
+        setClasses(mergeSameLessons<StudentAttendance, ClassJoins>(joinData.classes ?? []));
         setStudentList(joinData.students ?? []);
         setDupAccounts(joinData.duplicateAccounts ?? []);
         setHasSlots((slotData.slots ?? []).length > 0 || (joinData.classes ?? []).length > 0);

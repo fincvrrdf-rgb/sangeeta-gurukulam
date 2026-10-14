@@ -61,9 +61,27 @@ export async function GET(
       }
     }
 
+    // Readable names for records that only stored IDs
+    let unitName = assessment.teachingUnitName as string | undefined;
+    if (!unitName && assessment.teachingUnitId) {
+      unitName = (await getDoc<{ unitName?: string }>(COLLECTIONS.TEACHING_UNITS, assessment.teachingUnitId as string))?.unitName;
+    }
+    let studentName = assessment.studentName as string | undefined;
+    if (!studentName && assessment.studentId) {
+      studentName = (await getDoc<{ fullName?: string }>(
+        COLLECTIONS.STUDENT_PROFILES, String(assessment.studentId).replace(/_dependent$/, ''),
+      ))?.fullName;
+    }
+    const title = !assessment.title || assessment.title === `${assessment.teachingUnitId} assessment`
+      ? `${unitName || 'Lesson'} assessment`
+      : (assessment.title as string);
+
     return Response.json({
       assessment: {
         ...assessment,
+        teachingUnitName: unitName || 'Lesson',
+        studentName: studentName || 'Student',
+        title,
         status: (assessment.status as string) || (assessment.result ? 'graded' : 'assigned'),
       },
       videoUrl,
