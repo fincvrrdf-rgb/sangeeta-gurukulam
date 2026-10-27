@@ -6,9 +6,9 @@
  * pitch-analysed in the browser against their Sa and the raga; the server
  * turns that into AI preliminary review points.
  *
- * Upload goes straight from the browser to storage (no server size limit):
- * Supabase via a signed URL, falling back to Firebase Storage if Supabase
- * isn't available. Wrapped in ConsentGate so recording only begins after
+ * Upload goes straight from the browser into Firebase Storage through a
+ * session the server starts (no server size limit), falling back to the
+ * Firebase client SDK. Wrapped in ConsentGate so recording only begins after
  * explicit consent.
  */
 
@@ -21,7 +21,7 @@ import { ConsentGate } from '@/components/recording/ConsentGate';
 import { InAppRecorder } from '@/components/recording/InAppRecorder';
 import { ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { storage } from '@/lib/firebase/client';
-import { uploadFile } from '@/lib/storage/upload-client';
+import { uploadDirect } from '@/lib/storage/direct-upload';
 import { STORAGE_PATHS } from '@/domain/constants';
 import { analyzeRecording } from '@/lib/music/analyze-audio';
 import { findRaga } from '@/lib/music/ragas';
@@ -158,29 +158,28 @@ export default function PracticeRecordPage() {
       setUploadStage('uploading');
       setUploadProgress(0);
       let storagePath: string;
-      let storageProvider: 'supabase' | 'firebase';
+      const storageProvider = 'firebase' as const;
       try {
-        const file = new File([pendingBlob], fileName, { type: pendingMime });
-        const up = await uploadFile(
+        // Straight into Firebase Storage through a session the server starts
+        ({ path: storagePath } = await uploadDirect(
           apiFetch,
           { kind: 'recording', teachingUnitId: unitForPath, weekOf },
-          file,
+          pendingBlob,
+          fileName,
           setUploadProgress,
-        );
-        storagePath = up.path;
-        storageProvider = 'supabase';
-      } catch (supabaseErr) {
-        console.warn('Supabase upload failed, trying Firebase Storage', supabaseErr);
+        ));
+      } catch (primaryErr) {
+        console.warn('Direct upload failed, trying the Firebase SDK', primaryErr);
+        setUploadProgress(0);
         storagePath = STORAGE_PATHS.recording(user.uid, unitForPath, weekOf, fileName);
-        storageProvider = 'firebase';
         await new Promise<void>((resolve, reject) => {
           const task = uploadBytesResumable(storageRef(storage, storagePath), pendingBlob, { contentType: pendingMime });
           task.on(
             'state_changed',
             (snap) => setUploadProgress(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
             (err) => reject(new Error(
-              `Upload failed — ${supabaseErr instanceof Error ? supabaseErr.message : 'storage unavailable'}; ` +
-              `backup storage: ${err.message}`,
+              `Upload failed — ${primaryErr instanceof Error ? primaryErr.message : 'upload could not start'}` +
+              ` (backup: ${err.message})`,
             )),
             () => resolve(),
           );

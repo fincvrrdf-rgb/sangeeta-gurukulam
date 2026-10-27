@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { storage } from '@/lib/firebase/client';
 import { useAuthContext } from '@/components/layout/AuthProvider';
+import { uploadDirect } from '@/lib/storage/direct-upload';
 import { ASSESSMENT_ALLOWED_MIME_TYPES, ASSESSMENT_MAX_SIZE_BYTES, STORAGE_PATHS } from '@/domain/constants';
 
 type Status = 'assigned' | 'submitted' | 'graded';
@@ -83,12 +84,22 @@ export default function StudentAssessmentsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleFile(assessment: Assessment, file: File) {
+  async function handleFile(assessment: Assessment, picked: File) {
+    let file = picked;
     setUploadError(null);
     setSuccessId(null);
 
     // Video only — the taalam has to be visible
-    const isVideo = file.type.startsWith('video/') || ASSESSMENT_ALLOWED_MIME_TYPES.includes(file.type);
+    // Some phones don't label video files: recognise them by extension too
+    const VIDEO_EXT: Record<string, string> = {
+      mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+      mkv: 'video/x-matroska', '3gp': 'video/3gpp', avi: 'video/x-msvideo',
+    };
+    const extType = VIDEO_EXT[(file.name.split('.').pop() ?? '').toLowerCase()];
+    const isVideo = file.type.startsWith('video/') || ASSESSMENT_ALLOWED_MIME_TYPES.includes(file.type) || !!extType;
+    if (isVideo && !file.type.startsWith('video/') && extType) {
+      file = new File([file], file.name, { type: extType });
+    }
     if (!isVideo) {
       setUploadError('Please choose a video file (MP4, WebM or MOV) — your taalam needs to be visible.');
       return;
@@ -103,52 +114,31 @@ export default function StudentAssessmentsPage() {
 
     try {
       let videoPath: string;
-      let videoProvider: 'supabase' | 'firebase';
+      const videoProvider = 'firebase' as const;
 
-      // Preferred path: signed URL straight to Supabase (no server size limit)
+      // Straight into Firebase Storage through a session the server starts
+      // (no size or permission limits from the browser side)
       try {
-        const res = await apiFetch('/api/files/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kind: 'assessment',
-            assessmentId: assessment.id,
-            fileName: file.name,
-            contentType: file.type,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? `Could not start upload (${res.status})`);
-
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', data.uploadUrl);
-          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-          xhr.setRequestHeader('x-upsert', 'true');
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
-          };
-          xhr.onload = () =>
-            xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`));
-          xhr.onerror = () => reject(new Error('Network error during upload'));
-          xhr.send(file);
-        });
-
-        videoPath = data.path;
-        videoProvider = 'supabase';
+        ({ path: videoPath } = await uploadDirect(
+          apiFetch,
+          { kind: 'assessment', assessmentId: assessment.id },
+          file,
+          file.name,
+          setProgress,
+        ));
       } catch (primaryErr) {
-        // Fallback: Firebase Storage, same as practice recordings
-        console.warn('Supabase upload failed, trying Firebase Storage', primaryErr);
+        // Fallback: the Firebase client SDK, as practice recordings use
+        console.warn('Direct upload failed, trying the Firebase SDK', primaryErr);
+        setProgress(0);
         videoPath = STORAGE_PATHS.assessmentVideo(user!.uid, assessment.id, `${Date.now()}_${file.name}`);
-        videoProvider = 'firebase';
         await new Promise<void>((resolve, reject) => {
-          const task = uploadBytesResumable(storageRef(storage, videoPath), file, { contentType: file.type });
+          const task = uploadBytesResumable(storageRef(storage, videoPath), file, { contentType: file.type || 'video/mp4' });
           task.on(
             'state_changed',
             (snap) => setProgress(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
             (err) => reject(new Error(
-              `Upload failed — ${primaryErr instanceof Error ? primaryErr.message : 'storage unavailable'}; ` +
-              `backup storage: ${err.message}`,
+              `Upload failed — ${primaryErr instanceof Error ? primaryErr.message : 'upload could not start'}` +
+              ` (backup: ${err.message})`,
             )),
             () => resolve(),
           );
@@ -268,8 +258,7 @@ export default function StudentAssessmentsPage() {
                   <input
                     ref={(el) => { fileInputs.current[a.id] = el; }}
                     type="file"
-                    accept="video/*"
-                    capture="user"
+                    accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.3gp"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -285,7 +274,7 @@ export default function StudentAssessmentsPage() {
                   >
                     {isUploading
                       ? `Uploading… ${progress}%`
-                      : a.status === 'submitted' ? '🎥 Replace video' : '🎥 Record / upload video'}
+                      : a.status === 'submitted' ? '🎥 Replace video' : '🎥 Upload video (record or choose from gallery)'}
                   </button>
                   {isUploading && (
                     <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">

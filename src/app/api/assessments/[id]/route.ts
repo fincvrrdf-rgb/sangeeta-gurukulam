@@ -17,6 +17,7 @@ import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { createNotification } from '@/services/notifications/create';
 import { whatsAppLink, firstName } from '@/lib/whatsapp';
 import { getSupabaseSignedUrl, supabaseConfigured, BUCKETS } from '@/lib/storage/supabase';
+import { fileLinkFor } from '@/lib/storage/file-links';
 import { z } from 'zod';
 
 const UpdateAssessmentSchema = z.object({
@@ -59,6 +60,10 @@ export async function GET(
       } catch {
         // Leave null — the UI shows "video unavailable"
       }
+    } else if (assessment.videoPath) {
+      // Firebase Storage: a signed link from the server, independent of the
+      // Storage security rules (the page falls back to the Firebase SDK)
+      videoUrl = await fileLinkFor({ provider: 'firebase', bucket: '', path: assessment.videoPath as string });
     }
 
     // Readable names for records that only stored IDs

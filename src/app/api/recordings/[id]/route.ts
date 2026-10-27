@@ -14,6 +14,7 @@ import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { getDoc } from '@/lib/firebase/firestore';
 import { COLLECTIONS } from '@/domain/constants';
 import { supabaseConfigured, getSupabaseSignedUrl } from '@/lib/storage/supabase';
+import { fileLinkFor } from '@/lib/storage/file-links';
 
 export async function GET(
   request: NextRequest,
@@ -55,6 +56,10 @@ export async function GET(
       } catch {
         // Leave audioUrl null; the UI shows "audio unavailable"
       }
+    } else if (recording.storagePath) {
+      // Firebase Storage: signed link from the server (the page still falls
+      // back to the Firebase SDK if this is null)
+      audioUrl = await fileLinkFor({ provider: 'firebase', bucket: '', path: recording.storagePath as string });
     }
 
     return Response.json({
