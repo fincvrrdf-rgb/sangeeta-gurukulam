@@ -313,13 +313,14 @@ export const STORAGE_PATHS = {
 // =============================================================================
 
 /** Assessments are VIDEO-only so the taalam (hand gestures) stays visible. */
-export const ASSESSMENT_MAX_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
+export const ASSESSMENT_MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB (a few minutes of phone video)
 export const ASSESSMENT_ALLOWED_MIME_TYPES = [
   'video/mp4',
   'video/webm',
   'video/quicktime',  // .mov — iPhone default
   'video/x-matroska',
   'video/3gpp',       // older Android phones
+  'video/x-msvideo',
 ];
 
 // =============================================================================
