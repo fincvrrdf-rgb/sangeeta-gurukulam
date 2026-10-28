@@ -137,8 +137,10 @@ export default function StudentAssessmentsPage() {
             'state_changed',
             (snap) => setProgress(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
             (err) => reject(new Error(
-              `Upload failed — ${primaryErr instanceof Error ? primaryErr.message : 'upload could not start'}` +
-              ` (backup: ${err.message})`,
+              (err as { code?: string }).code === 'storage/unauthorized'
+                ? 'Upload permission is being set up for your account — please wait a minute and try the upload again.'
+                : `Upload failed — ${primaryErr instanceof Error ? primaryErr.message : 'upload could not start'}` +
+                  ` (backup: ${err.message})`,
             )),
             () => resolve(),
           );

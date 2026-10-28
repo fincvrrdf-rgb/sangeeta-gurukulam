@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "seed": "npx tsx src/lib/firebase/seed/run-seed.ts"
+    "seed": "npx tsx src/lib/firebase/seed/run-seed.ts",
+    "prebuild": "node scripts/gen-storage-rules.mjs"
   },
   "dependencies": {
     "next": "^14.2.21",
