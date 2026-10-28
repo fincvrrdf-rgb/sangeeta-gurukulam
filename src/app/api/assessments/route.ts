@@ -16,6 +16,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { createDoc, getDoc, queryDocs, nowISO } from '@/lib/firebase/firestore';
+import { ensureStorageRules } from '@/lib/firebase/storage-rules';
 import { COLLECTIONS } from '@/domain/constants';
 import { writeAuditLog, extractRequestMeta } from '@/services/audit/log';
 import { createNotification } from '@/services/notifications/create';
@@ -48,6 +49,10 @@ export async function GET(request: NextRequest) {
     const auth = await requireAuth(request);
 
     const { searchParams } = new URL(request.url);
+
+    // Make sure students can upload their videos (publishes the Storage
+    // rules once if the live ones are out of date); never blocks for long
+    await Promise.race([ensureStorageRules(), new Promise((r) => setTimeout(r, 4000))]);
 
     // Filter only (no orderBy): a filter plus a sort needs a composite
     // Firestore index this project doesn't have, and the query then failed,

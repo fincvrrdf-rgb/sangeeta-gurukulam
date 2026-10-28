@@ -14,6 +14,7 @@ import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { requireAuth, authErrorResponse } from '@/lib/auth/middleware';
 import { adminStorage } from '@/lib/firebase/admin';
+import { ensureStorageRules } from '@/lib/firebase/storage-rules';
 import { ASSESSMENT_MAX_SIZE_BYTES, STORAGE_PATHS } from '@/domain/constants';
 import { z } from 'zod';
 
@@ -62,6 +63,12 @@ export async function POST(request: NextRequest) {
       path = STORAGE_PATHS.recording(auth.uid, teachingUnitId || 'general', weekOf, safeName(fileName));
     }
 
+    // Keep the browser fallback (Firebase SDK upload) working too
+    const rules = await Promise.race([
+      ensureStorageRules(),
+      new Promise<string>((r) => setTimeout(() => r('pending'), 4000)),
+    ]);
+
     // The session only accepts uploads from the page that asked for it
     const origin = request.headers.get('origin')
       || (request.headers.get('host') ? `https://${request.headers.get('host')}` : undefined);
@@ -75,7 +82,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return Response.json({ uploadUrl, path, contentType });
+    return Response.json({ uploadUrl, path, contentType, rules });
   } catch (error) {
     if (error instanceof Error && !('statusCode' in error)) {
       console.error('[DIRECT_UPLOAD]', error);
